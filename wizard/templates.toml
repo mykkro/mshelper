@@ -1,0 +1,930 @@
+# Prompt Wizard templates.
+#
+# BLOCKS are reusable pieces prepended to the task prompt (chosen in the top bar).
+#   kind = "primer" | "language" | "format"
+#
+# TASKS appear in the sidebar. Each task has form `fields` and a `template`.
+#   Field types: text | textarea | code | select   (code fields are auto-wrapped in ``` fences)
+#   Optional keys: required, placeholder, options (for select), lang (fence language for code)
+#
+# Template rules:
+#   {{name}} is replaced by the field value.
+#   Paragraphs are separated by blank lines. A paragraph whose placeholders are ALL empty is
+#   dropped, label included. Inside a kept paragraph, a line whose placeholders are all empty
+#   is dropped.
+#
+# Use ''' literal strings so backslashes and quotes need no escaping.
+
+# ---------------------------------------------------------------------------
+# Primers
+# ---------------------------------------------------------------------------
+
+[blocks.primer_full]
+kind = "primer"
+label = "Full primer (recommended)"
+text = '''
+You are acting as my senior pair-programmer. You cannot see my files or run code: I paste code, errors and command output, and I apply your changes and run them myself. Follow these rules for the whole conversation:
+
+WORKING STYLE
+1. Before writing code for any non-trivial task, restate the goal in 1-2 sentences and list your assumptions. If something important is ambiguous, ASK (max 3 short questions) instead of guessing.
+2. For multi-step work, propose a short numbered plan first and wait for my "go". Then do ONE step per reply, unless I say "do all".
+3. Never invent APIs, functions, files, config keys or library versions. If you are not sure something exists, say so and tell me how to check.
+4. Only change what the task needs. Do not rename, reformat or "improve" unrelated code.
+5. Keep my existing style, naming, structure and dependencies. Do not add a new dependency without asking first.
+
+OUTPUT
+6. Label every code block with its file path. For edits to existing code, use SEARCH/REPLACE blocks or complete files. Never write "... rest unchanged ..." inside code.
+7. After the code, give: (a) a 1-3 line summary, (b) the exact commands to verify it, (c) risks or follow-ups.
+
+QUALITY
+8. Production quality: error handling, edge cases, clear names, no dead code or debug prints.
+9. When fixing a bug, state the root cause in one sentence before the fix.
+10. When you add behavior, also give tests for it, unless I say not to.
+'''
+
+[blocks.primer_short]
+kind = "primer"
+label = "Short primer"
+text = '''
+Act as a senior engineer. Rules: ask if something is ambiguous; don't invent APIs; change only what is needed; label code blocks with file paths; for edits use SEARCH/REPLACE blocks or complete files (never "rest unchanged"); end with a short summary and the commands to verify.
+'''
+
+# ---------------------------------------------------------------------------
+# Language conventions
+# ---------------------------------------------------------------------------
+
+[blocks.lang_python]
+kind = "language"
+label = "Python"
+text = '''
+PYTHON CONVENTIONS:
+- Modern Python 3.10+: type hints everywhere (list[str], X | None), f-strings, pathlib, dataclasses, match where clearer.
+- PEP 8; must pass ruff and mypy. Google-style docstrings on public items.
+- Specific exceptions, never a bare except, use raise ... from err. Context managers for resources. The logging module, not print.
+- pytest: plain asserts, fixtures, parametrize, tmp_path, monkeypatch.
+- Standard library first. No mutable default args, no wildcard imports.
+'''
+
+[blocks.lang_javascript]
+kind = "language"
+label = "JavaScript / TypeScript"
+text = '''
+JAVASCRIPT/TYPESCRIPT CONVENTIONS:
+- Prefer strict TypeScript; no `any` (use unknown + narrowing). ESM modules. const/let, ===, ?. and ??.
+- async/await, handle every rejection, no floating promises; Promise.all for independent work.
+- Throw Error objects (with `cause` when wrapping). Validate external data at the boundaries.
+- React: function components + hooks, no unnecessary useEffect, accessible markup.
+- Tests with vitest/jest (+ testing-library). Must pass eslint, prettier and tsc --noEmit.
+- Prefer platform APIs over new dependencies.
+'''
+
+[blocks.lang_rust]
+kind = "language"
+label = "Rust"
+text = '''
+RUST CONVENTIONS:
+- Edition 2021, stable toolchain. Must pass cargo clippy -- -D warnings and cargo fmt.
+- No unwrap/expect outside tests unless an invariant guarantees it (add a comment). Use `?`; thiserror in libraries, anyhow + context in binaries.
+- Borrow in parameters (&str, &[T]); no needless clone; avoid Rc<RefCell>/Arc<Mutex> unless needed.
+- Use enums and newtypes to make invalid states unrepresentable. No unsafe without a SAFETY comment and my approval.
+- tokio: never block in async code. Unit tests in #[cfg(test)] mod tests.
+- If unsure whether a crate API or feature flag exists in my version, say so.
+'''
+
+# ---------------------------------------------------------------------------
+# Output formats
+# ---------------------------------------------------------------------------
+
+[blocks.fmt_search_replace]
+kind = "format"
+label = "SEARCH/REPLACE blocks"
+text = '''
+OUTPUT FORMAT: return edits ONLY as SEARCH/REPLACE blocks:
+FILE: path/to/file.ext
+<<<<<<< SEARCH
+(exact existing lines, verbatim, including indentation, enough to be unique)
+=======
+(replacement lines)
+>>>>>>> REPLACE
+One block per contiguous change. For new files, give the complete file under "FILE: path (new)".
+'''
+
+[blocks.fmt_full_file]
+kind = "format"
+label = "Complete files"
+text = '''
+OUTPUT FORMAT: return the COMPLETE contents of every changed file, ready to save, each under a "FILE: path" label. Include every line, with no placeholders, ellipses or "unchanged" comments.
+'''
+
+[blocks.fmt_diff]
+kind = "format"
+label = "Unified diff (git apply)"
+text = '''
+OUTPUT FORMAT: return a unified diff (git format, a/ and b/ paths relative to the repo root) that I can apply with `git apply`. 3 lines of context, accurate hunk headers.
+'''
+
+[blocks.fmt_functions]
+kind = "format"
+label = "Changed functions only"
+text = '''
+OUTPUT FORMAT: return only the full new versions of the functions/methods/types you changed, each preceded by "FILE: path - replaces `name`". List any new imports separately at the top.
+'''
+
+[blocks.fmt_plan]
+kind = "format"
+label = "Plan only (no code)"
+text = '''
+OUTPUT FORMAT: don't write code. Answer with: 1) the approach in 3-5 bullets, 2) the files to touch, 3) risks and open questions, 4) a verification plan.
+'''
+
+# ===========================================================================
+# Tasks: Agent loop
+# ===========================================================================
+
+[[tasks]]
+id = "brief"
+category = "Agent loop"
+title = "1. Brief a task (no code yet)"
+description = "Start of the manual agent loop: describe the task, then get questions and assumptions back."
+fields = [
+  { name = "task", label = "Task (the outcome you want)", type = "textarea", required = true },
+  { name = "criteria", label = "Acceptance criteria (one per line)", type = "textarea" },
+  { name = "out_of_scope", label = "Out of scope / must not change", type = "textarea" },
+  { name = "code", label = "Relevant code (or bundle files below)", type = "code" },
+]
+template = '''
+TASK
+{{task}}
+
+ACCEPTANCE CRITERIA
+{{criteria}}
+- Existing tests still pass.
+
+OUT OF SCOPE
+{{out_of_scope}}
+
+{{code}}
+
+Do not write code yet. First restate the task, list your assumptions, and ask any questions you need answered.
+'''
+
+[[tasks]]
+id = "plan"
+category = "Agent loop"
+title = "2. Ask for a plan"
+description = "Get a step-by-step plan you can review before any code is written."
+fields = [
+  { name = "answers", label = "Answers to Copilot's questions (optional)", type = "textarea" },
+]
+template = '''
+{{answers}}
+
+Now propose an implementation plan:
+- Numbered steps, each small enough to finish and verify in one reply.
+- For each step: the files touched, what changes, and how I verify it (command + expected result).
+- Mark any step that is risky or that you are unsure about.
+- Put tests first where practical.
+Do not write code yet. Wait for my "go".
+'''
+
+[[tasks]]
+id = "step"
+category = "Agent loop"
+title = "3. Execute step(s)"
+description = "Tell Copilot to implement one step, or a range of steps."
+fields = [
+  { name = "from", label = "Step number", type = "text", required = true, placeholder = "1" },
+  { name = "to", label = "...up to step (optional)", type = "text" },
+]
+template = '''
+Go: step {{from}}.
+Continue through step {{to}} in this reply, and stop early if something is uncertain.
+Give only the changes for this work, in the agreed format, then the verify command.
+'''
+
+[[tasks]]
+id = "feedback"
+category = "Agent loop"
+title = "4. Paste back command output"
+description = "Feed the real test/build output back to Copilot."
+fields = [
+  { name = "step", label = "Step just applied", type = "text" },
+  { name = "command", label = "Command you ran", type = "text", required = true, placeholder = "pytest -q" },
+  { name = "output", label = "Output", type = "code", required = true },
+  { name = "notes", label = "Your observations / manual changes", type = "textarea" },
+]
+template = '''
+Applied step {{step}}.
+Ran `{{command}}`. Output:
+{{output}}
+
+{{notes}}
+
+Continue: if it's green, go to the next step. If it's red, diagnose the root cause before you fix.
+'''
+
+[[tasks]]
+id = "unstuck"
+category = "Agent loop"
+title = "Break a fix loop"
+description = "Use when Copilot keeps proposing fixes that fail."
+fields = [
+  { name = "tried", label = "What has been tried", type = "textarea", required = true },
+]
+template = '''
+Stop. We have tried the following and it all failed:
+{{tried}}
+
+Don't propose another fix yet. List the 3 most likely root causes, ranked, with the evidence for each, and tell me which single diagnostic (a print/log/command) would tell them apart.
+'''
+
+[[tasks]]
+id = "handoff"
+category = "Agent loop"
+title = "Handoff note (move to a new chat)"
+description = "Ask for a summary you can paste into a fresh chat when the current one gets long."
+fields = []
+template = '''
+Write a HANDOFF NOTE that I will paste into a new chat. Include:
+1. Goal and acceptance criteria.
+2. Plan with each step's status (done / in progress / todo).
+3. Key decisions made and why.
+4. Current state of each touched file (only the changed parts, or full code for small files).
+5. Open problems and the last error output.
+6. The exact next step.
+Be complete but terse. The new chat will have no other context.
+'''
+
+[[tasks]]
+id = "final_review"
+category = "Agent loop"
+title = "Final review + commit message"
+description = "Wrap up: a strict review of everything changed, plus a commit message."
+fields = [
+  { name = "diff", label = "git diff (optional)", type = "code", lang = "diff" },
+]
+template = '''
+We are done implementing.
+
+Here is the full diff:
+{{diff}}
+
+Review the full set of changes as a strict code reviewer:
+- Bugs, unhandled edge cases, error-handling gaps
+- Anything that doesn't meet the acceptance criteria
+- Leftover debug code, TODOs, dead code, inconsistent naming
+- Missing tests
+List the issues by severity (blocker / should-fix / nit).
+
+Then write a git commit message: an imperative subject of 72 chars or less, a blank line, and a body explaining what changed and why.
+'''
+
+# ===========================================================================
+# Tasks: Build
+# ===========================================================================
+
+[[tasks]]
+id = "implement"
+category = "Build"
+title = "Implement a feature"
+description = "Add new functionality to existing code."
+fields = [
+  { name = "feature", label = "Feature description", type = "textarea", required = true },
+  { name = "requirements", label = "Requirements (one per line)", type = "textarea" },
+  { name = "errors", label = "Error handling expectations", type = "textarea" },
+  { name = "constraints", label = "Constraints (perf, compat, deps...)", type = "textarea" },
+  { name = "code", label = "Relevant code", type = "code" },
+]
+template = '''
+Implement: {{feature}}
+
+Requirements:
+{{requirements}}
+
+Error handling:
+{{errors}}
+
+Constraints:
+{{constraints}}
+
+{{code}}
+
+Follow the existing code style. First give a short plan (files + changes). Then, after I say go, implement it with tests.
+'''
+
+[[tasks]]
+id = "function_spec"
+category = "Build"
+title = "Write a function from a spec"
+description = "Specify a function precisely, with examples, and get code + tests."
+fields = [
+  { name = "language", label = "Language", type = "select", options = ["Python", "TypeScript", "JavaScript", "Rust"], required = true },
+  { name = "signature", label = "Name / signature", type = "text", required = true, placeholder = "parse_duration(text: str) -> timedelta" },
+  { name = "purpose", label = "Purpose", type = "text", required = true },
+  { name = "inputs", label = "Inputs & constraints", type = "textarea" },
+  { name = "output", label = "Output", type = "text" },
+  { name = "errors", label = "Error behavior", type = "text" },
+  { name = "examples", label = "Examples (input -> output, one per line)", type = "textarea" },
+  { name = "libs", label = "Allowed libraries", type = "text", placeholder = "standard library only" },
+]
+template = '''
+Write a {{language}} function:
+- Name / signature: {{signature}}
+- Purpose: {{purpose}}
+- Inputs and constraints: {{inputs}}
+- Output: {{output}}
+- Errors: {{errors}}
+- Allowed libraries: {{libs}}
+
+Examples:
+{{examples}}
+
+Include a docstring/doc comment and unit tests that cover the examples plus edge cases (empty, boundary, unicode, very large).
+'''
+
+[[tasks]]
+id = "scaffold"
+category = "Build"
+title = "Scaffold a new project/module"
+description = "Generate the initial structure for a new tool, service or library."
+fields = [
+  { name = "what", label = "What to build", type = "textarea", required = true },
+  { name = "stack", label = "Stack / versions", type = "text", placeholder = "Python 3.12, typer, pytest, uv" },
+  { name = "features", label = "Initial features", type = "textarea" },
+  { name = "constraints", label = "Constraints", type = "textarea", placeholder = "Windows, offline, no external services" },
+]
+template = '''
+Scaffold a new project: {{what}}
+Stack: {{stack}}
+Constraints: {{constraints}}
+
+Initial features:
+{{features}}
+
+First show the directory tree with a one-line purpose for each file, plus the setup/build/test/lint commands. Wait for my OK, then give the files one or two at a time, complete. Include a minimal README and one passing test.
+'''
+
+# ===========================================================================
+# Tasks: Fix
+# ===========================================================================
+
+[[tasks]]
+id = "debug"
+category = "Fix"
+title = "Debug an error"
+description = "There is an exception, a compiler error, or a failing test."
+fields = [
+  { name = "error", label = "Full error / traceback", type = "code", required = true },
+  { name = "command", label = "Command you ran", type = "text" },
+  { name = "code", label = "Code involved", type = "code" },
+  { name = "expected", label = "What should happen", type = "textarea" },
+  { name = "env", label = "Environment (OS, versions)", type = "text" },
+  { name = "tried", label = "What you already tried", type = "textarea" },
+]
+template = '''
+I get this error:
+{{error}}
+When I run: `{{command}}`
+
+Code involved:
+{{code}}
+
+Expected: {{expected}}
+Environment: {{env}}
+What I already tried: {{tried}}
+
+1) Explain the root cause in 1-3 sentences, pointing to specific lines.
+2) Give the minimal fix.
+3) If you're not certain, list the alternative causes and a quick check for each instead of guessing.
+'''
+
+[[tasks]]
+id = "wrong_behavior"
+category = "Fix"
+title = "Wrong result (no error)"
+description = "The code runs but produces the wrong output."
+fields = [
+  { name = "input", label = "Input", type = "textarea", required = true },
+  { name = "expected", label = "Expected", type = "textarea", required = true },
+  { name = "actual", label = "Actual", type = "textarea", required = true },
+  { name = "condition", label = "Only happens when... (optional)", type = "text" },
+  { name = "code", label = "Code", type = "code" },
+]
+template = '''
+This code runs but gives the wrong result.
+Input: {{input}}
+Expected: {{expected}}
+Actual: {{actual}}
+Happens only when: {{condition}}
+
+{{code}}
+
+Don't fix anything yet. Walk through the code with this input step by step, showing the key variable values, and find where the actual behavior diverges from the expected. Then propose the fix.
+'''
+
+[[tasks]]
+id = "repro_test"
+category = "Fix"
+title = "Reproduce a bug as a failing test"
+description = "Lock the bug down with a test before fixing it."
+fields = [
+  { name = "bug", label = "Bug description", type = "textarea", required = true },
+  { name = "framework", label = "Test framework", type = "text", placeholder = "pytest / vitest / cargo test" },
+  { name = "code", label = "Code", type = "code" },
+]
+template = '''
+Before fixing anything, write ONE minimal test that reproduces this bug and fails for the right reason:
+{{bug}}
+Test framework: {{framework}}
+
+{{code}}
+
+Tell me what failure message I should expect when I run it.
+'''
+
+# ===========================================================================
+# Tasks: Improve
+# ===========================================================================
+
+[[tasks]]
+id = "refactor"
+category = "Improve"
+title = "Refactor (behavior-preserving)"
+description = "Restructure code without changing what it does."
+fields = [
+  { name = "goal", label = "Refactoring goal", type = "text", required = true, placeholder = "split this 200-line function / make it testable" },
+  { name = "constraints", label = "Extra constraints", type = "textarea" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+Refactor the code below to {{goal}}.
+
+Constraints:
+- Behavior must stay EXACTLY the same, including error cases and the public API.
+- Keep the change small and reviewable. No unrelated cleanups.
+{{constraints}}
+
+{{code}}
+
+First list the refactoring steps you plan (each one should keep the behavior). Then apply them. Point out any spot where preserving the behavior is ambiguous.
+'''
+
+[[tasks]]
+id = "review"
+category = "Improve"
+title = "Code review"
+description = "A strict review of code or a diff."
+fields = [
+  { name = "context", label = "What the code is for / who calls it", type = "textarea" },
+  { name = "code", label = "Code or diff", type = "code", required = true },
+]
+template = '''
+Review this code as a strict senior reviewer. Focus on, in this order:
+1. Correctness bugs and unhandled edge cases
+2. Error handling and resource cleanup
+3. Security issues (injection, unsafe deserialization, path traversal, secrets)
+4. Concurrency / race conditions, if relevant
+5. Readability and maintainability
+6. Test gaps
+
+For each finding: severity (blocker/should-fix/nit), location, the problem, a concrete fix. Don't report pure style preferences that a formatter would handle. If the code is fine, say so.
+
+Context: {{context}}
+
+{{code}}
+'''
+
+[[tasks]]
+id = "tests"
+category = "Improve"
+title = "Write tests"
+description = "Generate a focused test suite for existing code."
+fields = [
+  { name = "framework", label = "Test framework", type = "text", required = true, placeholder = "pytest / vitest / cargo test" },
+  { name = "risky", label = "Specific risky cases to cover", type = "textarea" },
+  { name = "mocks", label = "External I/O to mock", type = "text", placeholder = "network, filesystem, time, DB" },
+  { name = "example", label = "Existing test (for style)", type = "code" },
+  { name = "code", label = "Code under test", type = "code", required = true },
+]
+template = '''
+Write tests for the code below using {{framework}}.
+- Cover: the happy path, boundaries, invalid input, error paths.
+- Also cover: {{risky}}
+- Use descriptive test names that state the behavior. Use arrange/act/assert; each test checks one behavior.
+- Mock only external I/O ({{mocks}}). Don't mock the code under test.
+
+Match this existing test style:
+{{example}}
+
+Code under test:
+{{code}}
+
+Start with a list of the test cases (name + one line each) so I can approve it, then write them.
+'''
+
+[[tasks]]
+id = "performance"
+category = "Improve"
+title = "Make it faster"
+description = "Find and fix performance bottlenecks."
+fields = [
+  { name = "measurement", label = "Current vs target", type = "text", required = true, placeholder = "12 s for 100k rows; target < 1 s" },
+  { name = "profile", label = "Profiler output (optional)", type = "code" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+This code is too slow: {{measurement}}.
+
+Profiler output:
+{{profile}}
+
+{{code}}
+
+1) Find the likely bottlenecks and give the complexity (big-O) of each.
+2) Propose optimizations, ranked by expected gain vs effort. Keep the behavior identical.
+3) Implement the top one, and tell me how to measure the improvement.
+Don't micro-optimize at the cost of readability unless the gain is large.
+'''
+
+[[tasks]]
+id = "security"
+category = "Improve"
+title = "Security review"
+description = "Look for vulnerabilities, given the inputs an attacker controls."
+fields = [
+  { name = "inputs", label = "Attacker-controlled inputs", type = "text", required = true, placeholder = "HTTP params, uploaded files" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+Do a security review of this code. Assume an attacker controls: {{inputs}}.
+Check: injection (SQL/command/template), path traversal, deserialization, authn/authz gaps, secrets in code/logs, unsafe crypto/randomness, SSRF, DoS via unbounded input, dependency risks.
+For each issue: a concrete exploit scenario, the severity, and the fix.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "migration"
+category = "Improve"
+title = "Dependency / API upgrade"
+description = "Upgrade a library and adapt your code to it."
+fields = [
+  { name = "library", label = "Library", type = "text", required = true },
+  { name = "old", label = "From version", type = "text", required = true },
+  { name = "new", label = "To version", type = "text", required = true },
+  { name = "code", label = "Code using it", type = "code", required = true },
+]
+template = '''
+I'm upgrading {{library}} from {{old}} to {{new}}.
+
+{{code}}
+
+List the breaking changes that affect this code, and give the updated code. If you're unsure about a specific change in the new version, say so explicitly and tell me where in the changelog or docs to check.
+'''
+
+# ===========================================================================
+# Tasks: Understand
+# ===========================================================================
+
+[[tasks]]
+id = "explain"
+category = "Understand"
+title = "Explain unfamiliar code"
+description = "Get oriented in code you didn't write."
+fields = [
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+Explain this code to me. I'm an experienced developer, but new to this codebase.
+1. Purpose in 2 sentences.
+2. Flow: the main steps in order, as numbered bullets.
+3. Key data structures and what they hold.
+4. Non-obvious parts: tricky logic, hidden side effects, assumptions.
+5. Possible bugs or smells you notice (briefly).
+
+{{code}}
+'''
+
+[[tasks]]
+id = "compare_options"
+category = "Understand"
+title = "Compare approaches"
+description = "Get a few design options weighed against each other before you commit."
+fields = [
+  { name = "problem", label = "Problem / decision", type = "textarea", required = true },
+  { name = "context", label = "Context & constraints", type = "textarea" },
+  { name = "count", label = "Number of options", type = "select", options = ["2", "3", "4"], required = true },
+]
+template = '''
+Problem: {{problem}}
+Context: {{context}}
+
+Give {{count}} alternative approaches. For each: a short description, pros, cons, complexity (S/M/L), and when you'd pick it. End with your recommendation and why. No code yet.
+'''
+
+[[tasks]]
+id = "learn"
+category = "Understand"
+title = "Learn a concept"
+description = "A practical crash course on a language feature or library."
+fields = [
+  { name = "concept", label = "Concept", type = "text", required = true, placeholder = "Rust lifetimes" },
+  { name = "known", label = "What you already know", type = "text" },
+]
+template = '''
+Teach me {{concept}} for practical use.
+1. A one-paragraph intuition.
+2. A minimal runnable example.
+3. The 3 most common mistakes, each with a broken and a fixed snippet.
+4. When NOT to use it.
+I already know: {{known}}
+'''
+
+[[tasks]]
+id = "docs"
+category = "Understand"
+title = "Write documentation"
+description = "Docstrings, doc comments, or a README."
+fields = [
+  { name = "kind", label = "What to write", type = "select", options = ["docstrings / doc comments", "README section", "module overview"], required = true },
+  { name = "style", label = "Style", type = "text", placeholder = "Google / JSDoc / rustdoc" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+Write {{kind}} for the code below.
+Style: {{style}}
+For each public item: purpose, parameters, return value, errors, and a short example. Document behavior and contracts, not the implementation details. Don't change any code. Mark anything you'd have to guess with TODO.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: Snippets
+# ===========================================================================
+
+[[tasks]]
+id = "translate"
+category = "Snippets"
+title = "Port code to another language"
+description = "Idiomatic translation, e.g. Python to Rust."
+fields = [
+  { name = "source", label = "From", type = "select", options = ["Python", "JavaScript", "TypeScript", "Rust"], required = true },
+  { name = "target", label = "To", type = "select", options = ["Rust", "Python", "TypeScript", "JavaScript"], required = true },
+  { name = "deps", label = "Dependency mapping (optional)", type = "text", placeholder = "requests -> reqwest" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+Port this {{source}} code to idiomatic {{target}}.
+- Keep the behavior identical, including the edge cases and errors.
+- Use the target language's idioms (error handling, iterators, naming); don't transliterate line by line.
+- Dependency mapping: {{deps}}
+- Ask if a dependency has no obvious equivalent. List every behavior difference you couldn't avoid.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "regex"
+category = "Snippets"
+title = "Regex"
+description = "A regex with examples that should and shouldn't match."
+fields = [
+  { name = "flavor", label = "Flavor", type = "select", options = ["Python re", "JavaScript", "Rust regex crate", "PCRE"], required = true },
+  { name = "what", label = "Should match...", type = "text", required = true },
+  { name = "yes", label = "Positive examples", type = "textarea" },
+  { name = "no", label = "Negative examples", type = "textarea" },
+]
+template = '''
+Write a regex ({{flavor}}) that matches {{what}}.
+
+Should match:
+{{yes}}
+
+Should NOT match:
+{{no}}
+
+Explain each part, and give a small test that checks all the examples.
+'''
+
+[[tasks]]
+id = "shell"
+category = "Snippets"
+title = "Shell command / script"
+description = "A PowerShell or bash one-liner or short script."
+fields = [
+  { name = "shell", label = "Shell", type = "select", options = ["PowerShell 5.1 (Windows)", "PowerShell 7", "bash (Git Bash)", "bash (Linux)"], required = true },
+  { name = "task", label = "Task", type = "textarea", required = true },
+]
+template = '''
+Write a {{shell}} command or script that: {{task}}
+Explain the flags briefly. Make it safe: no destructive action without a dry-run option.
+'''
+
+[[tasks]]
+id = "sql"
+category = "Snippets"
+title = "SQL query"
+description = "A query against a given schema."
+fields = [
+  { name = "dialect", label = "Dialect", type = "select", options = ["PostgreSQL", "SQLite", "MS SQL Server", "MySQL"], required = true },
+  { name = "goal", label = "Goal", type = "textarea", required = true },
+  { name = "schema", label = "Schema (CREATE TABLE ...)", type = "code", lang = "sql" },
+]
+template = '''
+Write a {{dialect}} query for: {{goal}}
+
+Schema:
+{{schema}}
+
+Explain the joins, and the indexes that would help.
+'''
+
+# ===========================================================================
+# Tasks: Python
+# ===========================================================================
+
+[[tasks]]
+id = "py_types"
+category = "Python"
+title = "Add type hints (mypy --strict)"
+description = "Fully type a Python module."
+fields = [
+  { name = "code", label = "Code", type = "code", lang = "python", required = true },
+]
+template = '''
+Add complete, precise type hints to this module so that it passes `mypy --strict`. Use Protocol / TypeVar / generics / TypedDict / Literal where they fit better than Any. Don't change the runtime behavior. List any places where the hints exposed a real bug or an inconsistency.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "py_cli"
+category = "Python"
+title = "Script into a proper CLI"
+description = "Turn an ad-hoc script into a testable CLI tool."
+fields = [
+  { name = "lib", label = "CLI library", type = "select", options = ["argparse", "typer", "click"], required = true },
+  { name = "code", label = "Script", type = "code", lang = "python", required = true },
+]
+template = '''
+Turn this script into a clean CLI tool using {{lib}}:
+- --help text for every option; a main() entry point plus if __name__ == "__main__".
+- Exit codes: 0 on success, non-zero on errors, with errors printed to stderr. Logging with a --verbose flag.
+- Split the logic into testable functions that are separate from the I/O. Give a [project.scripts] entry for pyproject.toml.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "py_async"
+category = "Python"
+title = "Convert to asyncio"
+description = "Make I/O-bound Python code concurrent."
+fields = [
+  { name = "libs", label = "Async libraries", type = "text", placeholder = "httpx.AsyncClient, aiofiles" },
+  { name = "limit", label = "Concurrency limit", type = "text", placeholder = "10" },
+  { name = "code", label = "Code", type = "code", lang = "python", required = true },
+]
+template = '''
+Convert this code to asyncio.
+- Async libraries to use: {{libs}}
+- Run independent I/O concurrently (asyncio.gather or TaskGroup), limited through a Semaphore.
+- Concurrency limit: {{limit}}
+- Handle timeouts and cancellation correctly.
+Explain where concurrency actually helps here and where it doesn't.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: JS / TS
+# ===========================================================================
+
+[[tasks]]
+id = "ts_convert"
+category = "JS / TS"
+title = "Convert JS to TypeScript"
+description = "Strict TypeScript, with no `any`."
+fields = [
+  { name = "code", label = "JavaScript code", type = "code", lang = "javascript", required = true },
+]
+template = '''
+Convert this JavaScript file to strict TypeScript.
+- Infer precise types from usage. Create interfaces/types for the data shapes.
+- No `any`. Where the type is really unknown, use `unknown` and narrow it.
+- Mark places where the conversion exposed potential runtime bugs. Keep the runtime behavior identical.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "react_component"
+category = "JS / TS"
+title = "React component"
+description = "A typed, accessible function component with a test."
+fields = [
+  { name = "what", label = "Component description", type = "textarea", required = true },
+  { name = "props", label = "Props", type = "textarea" },
+  { name = "styling", label = "Styling", type = "select", options = ["CSS modules", "Tailwind", "plain CSS", "styled-components"] },
+]
+template = '''
+Write a React function component in TypeScript: {{what}}
+- Props: {{props}}
+- Styling: {{styling}}
+- Accessibility: semantic HTML, labels, keyboard support, aria attributes only where needed.
+- No unnecessary useEffect: derive values during render where possible; memoize only if justified.
+- Include a @testing-library/react test that checks the user-visible behavior.
+'''
+
+[[tasks]]
+id = "js_async_bug"
+category = "JS / TS"
+title = "Async bug hunt"
+description = "Hangs, races, unhandled rejections, wrong order."
+fields = [
+  { name = "symptom", label = "Symptom", type = "text", required = true, placeholder = "sometimes returns stale data" },
+  { name = "code", label = "Code", type = "code", required = true },
+]
+template = '''
+This async code sometimes {{symptom}}.
+
+{{code}}
+
+Analyze: unawaited promises, missing error handling, race conditions, shared mutable state across awaits, and sequential awaits that should run in parallel (or the reverse). Give a timeline of how the bug happens, then the fix.
+'''
+
+# ===========================================================================
+# Tasks: Rust
+# ===========================================================================
+
+[[tasks]]
+id = "rust_borrow"
+category = "Rust"
+title = "Fix a borrow checker error"
+description = "Understand the conflict and get the idiomatic fix."
+fields = [
+  { name = "error", label = "cargo build output", type = "code", required = true },
+  { name = "code", label = "Function(s) + struct definitions", type = "code", lang = "rust", required = true },
+]
+template = '''
+Borrow checker error:
+{{error}}
+
+{{code}}
+
+1) Explain in plain terms what conflict the compiler sees (who borrows what, and for how long).
+2) Give the idiomatic fix. Restructure the code instead of reaching for clone() or RefCell unless they're really the right tool, and say why.
+3) If there are multiple valid fixes, briefly compare them.
+'''
+
+[[tasks]]
+id = "rust_types"
+category = "Rust"
+title = "Design domain types"
+description = "Make invalid states unrepresentable."
+fields = [
+  { name = "domain", label = "Domain description", type = "textarea", required = true },
+  { name = "rules", label = "Rules / invariants", type = "textarea" },
+  { name = "serde", label = "Serde derives?", type = "select", options = ["no", "yes"] },
+]
+template = '''
+Design Rust types for: {{domain}}
+Rules/invariants: {{rules}}
+- Make invalid states unrepresentable (enums, newtypes, private fields + constructors).
+- Show the constructors and the key methods with their signatures.
+- Serde derives: {{serde}}
+- Explain the design trade-offs briefly.
+'''
+
+[[tasks]]
+id = "rust_idiomatic"
+category = "Rust"
+title = "Make it idiomatic (clippy-level)"
+description = "Clean up non-idiomatic Rust."
+fields = [
+  { name = "code", label = "Code", type = "code", lang = "rust", required = true },
+]
+template = '''
+Review this Rust code for idiom and clippy-level issues, and rewrite it: unnecessary clones/allocations, &String/&Vec parameters, manual loops that should be iterators, match -> if let / let-else, Option/Result combinators, missing derives, needless lifetimes. Keep the behavior identical. List the changes as bullets.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: Other
+# ===========================================================================
+
+[[tasks]]
+id = "custom"
+category = "Other"
+title = "Custom request"
+description = "Free-form request. The primer, language, format and bundled files still apply."
+fields = [
+  { name = "request", label = "Request", type = "textarea", required = true },
+  { name = "code", label = "Code (optional)", type = "code" },
+]
+template = '''
+{{request}}
+
+{{code}}
+'''

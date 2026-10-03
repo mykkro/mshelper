@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prompt Wizard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Prompt Wizard <span class="muted">for M365 Copilot</span></h1>
+    <div class="topbar-options">
+      <label>Primer
+        <select id="opt-primer" data-kind="primer"></select>
+      </label>
+      <label>Language
+        <select id="opt-language" data-kind="language"></select>
+      </label>
+      <label>Output format
+        <select id="opt-format" data-kind="format"></select>
+      </label>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <input id="task-search" type="search" placeholder="Search tasks…" aria-label="Search tasks">
+      <div id="task-list"></div>
+    </nav>
+
+    <main class="main">
+      <section class="card">
+        <h2 id="task-title">Pick a task</h2>
+        <p id="task-desc" class="muted"></p>
+        <form id="task-form" autocomplete="off"></form>
+      </section>
+
+      <details class="card" id="project-card">
+        <summary><h2>Project context <span id="project-badge" class="badge"></span></h2></summary>
+        <p class="muted">Bundle files from disk straight into the prompt. Paths are relative to the project root.</p>
+        <div class="row">
+          <input id="project-root" type="text" placeholder="C:\path\to\project" aria-label="Project root">
+          <button type="button" id="btn-scan">Scan</button>
+        </div>
+        <label class="check"><input type="checkbox" id="include-tree"> Include project layout (tree)</label>
+        <div id="file-picker" hidden>
+          <input id="file-filter" type="search" placeholder="Filter files… (e.g. .py, src/)" aria-label="Filter files">
+          <div id="file-list" class="file-list"></div>
+        </div>
+        <label>Selected files <span class="muted">(one per line, editable)</span>
+          <textarea id="project-files" rows="3" placeholder="src/app.py"></textarea>
+        </label>
+      </details>
+
+      <div class="actions">
+        <button type="button" id="btn-generate" class="primary">Generate prompt</button>
+        <button type="button" id="btn-reset">Clear fields</button>
+        <span id="status" role="status"></span>
+      </div>
+
+      <section class="card" id="output-card" hidden>
+        <div class="output-head">
+          <h2>Prompt</h2>
+          <span id="char-count" class="badge"></span>
+          <button type="button" id="btn-copy" class="primary">Copy</button>
+        </div>
+        <textarea id="output" rows="18" spellcheck="false"></textarea>
+        <p id="size-warning" class="warning" hidden>
+          This prompt is long. If Copilot rejects or truncates it, deselect some files or split the
+          context into parts (see the toolkit's context-packing guide).
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
