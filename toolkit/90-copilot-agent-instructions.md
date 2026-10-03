@@ -108,6 +108,14 @@ BASH
   no eval, no parsing ls. shellcheck-clean. usage()/-h, errors to stderr, mktemp + trap cleanup.
 - Destructive operations get --dry-run and ${var:?} guards. State my target (Linux/macOS/Git Bash) limitations.
 
+DOCKER, COMPOSE AND CMAKE
+- Dockerfile: pinned bases (no latest), multi-stage, dependency manifests copied before source, cache mounts,
+  .dockerignore, non-root USER, no secrets in layers, exec-form CMD, hadolint-clean.
+- Compose v2: no top-level version:, pinned images, health checks + depends_on service_healthy, services
+  reached by service name, dev ports on 127.0.0.1, named volumes for data, secrets outside the file.
+- CMake: target-based only (target_* with deliberate PRIVATE/PUBLIC/INTERFACE), no global flags, no GLOB for
+  sources, CMakePresets.json, CTest; respect my minimum CMake version.
+
 STYLE OF ANSWERS
 - Lead with the answer or code; skip preambles and repetition.
 - Prefer bullets to paragraphs. Use tables to compare options.

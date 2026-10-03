@@ -11,8 +11,10 @@ Chat UIs render answers as Markdown + LaTeX, which can leak into copied code:
 The fixer is language-aware: a backslash before punctuation is removed only in *code*
 regions (outside strings and comments), where it is never valid in Python, Rust, C, C++,
 Java or Kotlin (and, outside regex literals, in JavaScript/TypeScript). Inside strings such
-sequences may be real regex escapes, so they are only reported. In bash a backslash outside
-quotes is a legitimate escape, so bash only gets the typography and auto-link fixes.
+sequences may be real regex escapes, so they are only reported. In bash, Dockerfile, YAML and
+CMake a backslash is usually legitimate, so they only get targeted repairs: whitespace after a
+continuation backslash, ${VAR\\_NAME}, NAME\\_X= / name\\_x( / key\\_x:, escaped exec-form or flow
+brackets \\[ ... \\], plus a report of tab indentation in YAML.
 
 CLI:  python cleaner.py FILE... [--lang python] [--write]
 """
@@ -30,13 +32,15 @@ from dataclasses import asdict, dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
-LANGUAGES = ("python", "javascript", "typescript", "java", "kotlin", "rust", "c", "cpp", "bash", "html")
+LANGUAGES = ("python", "javascript", "typescript", "java", "kotlin", "rust", "c", "cpp", "bash",
+             "dockerfile", "yaml", "cmake", "html")
 EXT_TO_LANG = {
     ".py": "python", ".pyi": "python",
     ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript",
     ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript",
     ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
     ".sh": "bash", ".bash": "bash",
+    ".dockerfile": "dockerfile", ".yml": "yaml", ".yaml": "yaml", ".cmake": "cmake",
     ".rs": "rust",
     ".c": "c", ".h": "c",
     ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp",
@@ -439,6 +443,54 @@ def _md_autolinks(text: str, changes: list[Change]) -> str:
     return MD_LINK.sub(md, text)
 
 
+MARKUP_LANGS = {"bash", "dockerfile", "yaml", "cmake"}
+CONT_WS = re.compile(r"\\([ \t]+)(?=\n|\Z)")
+VAR_ESC = re.compile(r"\$\{[^}\n]*\\_[^}\n]*\}")
+ESCAPED_NAME = re.compile(r"(?<![\w\\])([A-Za-z][A-Za-z0-9]*(?:\\_[A-Za-z0-9]+)+)(?=\s*[=:(])")
+DOCKER_EXEC = re.compile(
+    r"^(\s*(?:CMD|ENTRYPOINT|RUN|SHELL|COPY|ADD|VOLUME|HEALTHCHECK(?:\s+--\S+)*\s+CMD)\s+)\\\[(.*)\\\](\s*)$",
+    re.MULTILINE | re.IGNORECASE)
+YAML_FLOW = re.compile(r"^(\s*(?:-\s+)?(?:[^\s:#\\][^:#]*:\s+)?)\\\[(.*)\\\](\s*)$", re.MULTILINE)
+YAML_TAB = re.compile(r"^ *\t", re.MULTILINE)
+
+
+def _markup_fixes(text: str, lang: str, changes: list[Change], fix: bool) -> str:
+    """Targeted repairs for languages where a backslash is usually legitimate (shell, Dockerfile, YAML, CMake)."""
+
+    def apply(pattern: re.Pattern[str], repl: Callable[[re.Match[str]], str], kind: str,
+              message: Callable[[re.Match[str]], str], current: str) -> str:
+        pos = _Positions(current)
+
+        def sub(m: re.Match[str]) -> str:
+            line, col = pos(m.start())
+            changes.append(Change(line, col, kind, message(m), fix))
+            return repl(m) if fix else m.group(0)
+
+        return pattern.sub(sub, current)
+
+    text = apply(CONT_WS, lambda m: "\\", "continuation",
+                 lambda m: "Whitespace after line-continuation backslash", text)
+    text = apply(VAR_ESC, lambda m: m.group(0).replace("\\_", "_"), "escape",
+                 lambda m: f"Markdown escape inside variable reference {m.group(0)!r}", text)
+    text = apply(ESCAPED_NAME, lambda m: m.group(1).replace("\\_", "_"), "escape",
+                 lambda m: f"Markdown escapes in name {m.group(1)!r}", text)
+    if lang == "cmake":
+        # CMake's escape_identity makes \_ mean _ everywhere, so removing the backslash is always safe.
+        text = apply(re.compile(r"\\_"), lambda m: "_", "escape",
+                     lambda m: "Markdown escape '\\_'", text)
+    if lang == "dockerfile":
+        text = apply(DOCKER_EXEC, lambda m: f"{m.group(1)}[{m.group(2)}]{m.group(3)}", "escape",
+                     lambda m: "Escaped exec-form brackets \\[ \\] (would silently become shell form)", text)
+    if lang == "yaml":
+        text = apply(YAML_FLOW, lambda m: f"{m.group(1)}[{m.group(2)}]{m.group(3)}", "escape",
+                     lambda m: "Escaped flow-sequence brackets \\[ \\]", text)
+        pos = _Positions(text)
+        for m in YAML_TAB.finditer(text):
+            line, col = pos(m.end() - 1)
+            changes.append(Change(line, col, "yaml-tab", "Tab in indentation: YAML allows only spaces", False))
+    return text
+
+
 VOID_ELEMENTS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
                  "source", "track", "wbr"}
 
@@ -525,9 +577,11 @@ def clean(code: str, lang: str, *, fix: bool = True, smart_quotes: bool = True,
     parts: list[str] = []
     if lang == "html":
         segs = _html_segments(text)
-    elif lang == "bash":
-        # Outside quotes a backslash is a legitimate escape in bash, so only the
-        # typography and auto-link fixes above apply.
+    elif lang in MARKUP_LANGS:
+        # A backslash is usually legitimate here (escapes, line continuations), so only
+        # the targeted repairs apply on top of the typography and auto-link fixes.
+        text = _markup_fixes(text, lang, changes, fix)
+        pos = _Positions(text)
         segs = [Segment("markup", 0, len(text))]
     else:
         segs = segments(text, lang)
@@ -553,6 +607,11 @@ def clean(code: str, lang: str, *, fix: bool = True, smart_quotes: bool = True,
 
 
 def detect_language(path: Path) -> str | None:
+    name = path.name.lower()
+    if name == "dockerfile" or name.startswith("dockerfile.") or name == "containerfile":
+        return "dockerfile"
+    if name == "cmakelists.txt":
+        return "cmake"
     return EXT_TO_LANG.get(path.suffix.lower())
 
 

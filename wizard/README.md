@@ -1,8 +1,11 @@
 # Prompt Wizard
 
-A small local web app that builds well-structured prompts for **Microsoft 365 Copilot**.
-Pick a task, fill in the form, optionally bundle files from your project, then copy the result
-into Copilot.
+A small local web app for working with **Microsoft 365 Copilot**, with three tabs:
+
+- **Prompt builder:** pick a task, fill in the form, optionally bundle files from your project, and copy the
+  prompt into Copilot.
+- **Code cleaner:** repair the damage that chat rendering does to pasted code.
+- **Patch builder:** turn Copilot's answer into a correct git patch for your files, and apply it.
 
 - **No dependencies.** It uses only the Python standard library (Python 3.11+), plus plain HTML/JS.
 - **Local only.** The server binds to `127.0.0.1` and nothing is sent anywhere. The prompt goes
@@ -52,11 +55,16 @@ The **Code cleaner** tab repairs damage that Copilot's chat rendering does to co
 | Stray backslash before a letter outside strings | `x \n y` | reported |
 | Broken HTML structure | attribute text outside tags, `<script src>` + inline code, `</link>`, unclosed `<script>` | reported |
 
-Languages: Python, JavaScript, TypeScript, Java, Kotlin, Rust, C, C++, Bash, HTML. The lexer knows each
-language's strings, comments, raw strings and text blocks, JS regex literals, Rust lifetimes and C++ digit
-separators, so legitimate backslashes are left alone. In *HTML* mode, inline `<script>` bodies are cleaned as
-JavaScript. In *Bash* a backslash outside quotes is a real escape (`\;`, `\*`), so only the typography and
-auto-link fixes apply.
+Languages: Python, JavaScript, TypeScript, Java, Kotlin, Rust, C, C++, Bash, Dockerfile, YAML/Compose,
+CMake, HTML. The lexer knows each language's strings, comments, raw strings and text blocks, JS regex literals,
+Rust lifetimes and C++ digit separators, so legitimate backslashes are left alone. In *HTML* mode, inline
+`<script>` bodies are cleaned as JavaScript.
+
+In Bash, Dockerfile, YAML and CMake a backslash is usually legitimate (`\;`, line continuations), so these get
+only targeted repairs: whitespace after a continuation backslash, `${DB\_PASSWORD}`, escaped names such as
+`POSTGRES\_USER:` / `ENV APP\_HOME=` / `target\_link\_libraries(`, escaped exec-form brackets
+(`CMD \["node", "app.js"\]`, which Docker would silently treat as shell form), escaped YAML flow lists, and a
+report of tab indentation in YAML.
 
 The same cleaner works from the command line, which is handy after saving several files:
 
@@ -64,6 +72,33 @@ The same cleaner works from the command line, which is handy after saving severa
 python cleaner.py src\app.py web\index.html            # report only (exit code 1 if issues found)
 python cleaner.py src\app.py --write                   # apply fixes in place (keeps CRLF/LF)
 python cleaner.py snippet.txt --lang rust --write
+```
+
+## Patch builder
+
+Copilot is bad at writing unified diffs (wrong hunk headers, stale context lines), so don't ask it for them.
+Ask for **SEARCH/REPLACE blocks** or **complete files**, each labeled `FILE: path` (the primer and the
+*SEARCH/REPLACE blocks* output format do this). Then paste the whole answer into the **Patch builder** tab:
+
+1. It parses every `FILE:` section: SEARCH/REPLACE blocks, a complete file in a code fence, or a new file
+   (`FILE: path (new)`). A label on the first line inside a code fence also works.
+2. It reads your **current** files from the project root and applies the blocks. SEARCH text is matched
+   exactly, then ignoring trailing whitespace, then ignoring indentation (the replacement is re-indented).
+   Ambiguous or missing matches are reported per block.
+3. Optionally, it runs the code cleaner on the answer first (`\[`, smart quotes...). If the cleaned SEARCH
+   text doesn't match, it retries with the raw text.
+4. It produces a git-style patch that keeps each file's CRLF/LF line endings, and warns about suspicious
+   complete files (placeholders like `... rest unchanged`, or a result less than half the original length).
+
+Then **Copy** it, **Download .patch** (`git apply copilot.patch`), or click **git apply --check** / **git apply**
+to apply it directly in the project root. Patches touching paths outside the root are refused.
+
+Command line (handy when the answer is saved to a file):
+
+```powershell
+python patcher.py answer.md --root C:\Work\myproject -o change.patch   # build the patch
+python patcher.py answer.md --root C:\Work\myproject --apply           # build + git apply
+Get-Clipboard | python patcher.py - --root . --file src\app.py         # answer from the clipboard, no FILE labels
 ```
 
 ## Add or edit templates
@@ -111,9 +146,10 @@ python -m unittest -v
 |------|---------|
 | `server.py` | HTTP server, template rendering, file bundling (stdlib only) |
 | `cleaner.py` | Code cleaner (also a CLI) |
+| `patcher.py` | Patch builder: Copilot answer → git patch (also a CLI) |
 | `templates.toml` | All tasks and blocks |
 | `static/` | UI (`index.html`, `app.js`, `style.css`) |
-| `test_server.py`, `test_cleaner.py` | Unit tests |
+| `test_server.py`, `test_cleaner.py`, `test_patcher.py` | Unit tests |
 
 ## Safety notes
 

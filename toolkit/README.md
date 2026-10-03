@@ -23,12 +23,15 @@ do those parts. These prompts keep that loop short and predictable.
 | [26-java.md](26-java.md) | Java conventions and prompts (modern Java, Spring, JPA, concurrency) | Java projects |
 | [27-kotlin.md](27-kotlin.md) | Kotlin conventions and prompts (idioms, coroutines, Compose, Gradle) | Kotlin projects |
 | [28-bash.md](28-bash.md) | Bash conventions and prompts (safe scripts, shellcheck, text processing) | Shell scripts |
+| [29-dockerfile.md](29-dockerfile.md) | Dockerfile conventions and prompts (multi-stage, caching, size, hardening, proxy/CA) | Container images |
+| [30-docker-compose.md](30-docker-compose.md) | Docker Compose conventions and prompts (health checks, networking, dev/prod, databases) | Multi-container projects |
+| [31-cmake.md](31-cmake.md) | CMake conventions and prompts (target-based setup, dependencies, presets, find_package/link errors) | C/C++ builds |
 | [90-copilot-agent-instructions.md](90-copilot-agent-instructions.md) | Instruction block for a custom Copilot agent (Agent Builder) | If your tenant lets you create agents |
 
 ## Quick start
 
 1. Open a **new** Copilot chat (old context causes drift).
-2. Paste the primer from `00-session-primer.md`. Add the language block from `2x-*.md` if it applies.
+2. Paste the primer from `00-session-primer.md`. Add the language block from `2x-*.md` / `3x-*.md` if it applies.
 3. Paste the context: the relevant files, the error, the goal (see `02-context-packing.md`).
 4. Pick a prompt from `10-prompts-general.md` or a language file and fill in the `{{placeholders}}`.
 5. Apply the changes, run tests or the linter, and paste the **real output** back. Repeat.

@@ -120,6 +120,49 @@ class JvmAndShellTests(unittest.TestCase):
         self.assertEqual(fixed(src, "bash"), 'find . -name \\*.txt -exec rm {} \\;\necho "done"')
 
 
+class ConfigFileTests(unittest.TestCase):
+    def test_dockerfile_exec_form_and_continuation(self) -> None:
+        src = ('FROM python:3.12-slim\n'
+               'RUN apt-get update && \\  \n    apt-get install -y curl\n'
+               'ENV APP\\_HOME=/app\n'
+               'CMD \\["python", "-m", "app"\\]\n')
+        self.assertEqual(fixed(src, "dockerfile"),
+                         'FROM python:3.12-slim\n'
+                         'RUN apt-get update && \\\n    apt-get install -y curl\n'
+                         'ENV APP_HOME=/app\n'
+                         'CMD ["python", "-m", "app"]\n')
+
+    def test_dockerfile_legit_backslashes_untouched(self) -> None:
+        src = 'RUN find / -name "*.pyc" -exec rm {} \\; \\\n    && echo done\n'
+        self.assertEqual(fixed(src, "dockerfile"), src)
+        self.assertEqual(kinds(src, "dockerfile"), [])
+
+    def test_compose_yaml_fixes_and_tab_report(self) -> None:
+        src = ('services:\n  db:\n    environment:\n'
+               '      POSTGRES\\_PASSWORD: ${DB\\_PASSWORD:?required}\n'
+               '    command: \\["postgres", "-c", "log_statement=all"\\]\n'
+               '\tvolumes: []\n')
+        result = cleaner.clean(src, "yaml")
+        self.assertEqual(result.code,
+                         'services:\n  db:\n    environment:\n'
+                         '      POSTGRES_PASSWORD: ${DB_PASSWORD:?required}\n'
+                         '    command: ["postgres", "-c", "log_statement=all"]\n'
+                         '\tvolumes: []\n')
+        self.assertIn("yaml-tab", [c.kind for c in result.changes])
+
+    def test_cmake_command_and_variable_names(self) -> None:
+        src = 'target\\_link\\_libraries(app PRIVATE core)\nset(CMAKE\\_CXX\\_STANDARD 20)\nmessage("${CMAKE\\_BUILD\\_TYPE}")\n'
+        self.assertEqual(fixed(src, "cmake"),
+                         'target_link_libraries(app PRIVATE core)\nset(CMAKE_CXX_STANDARD 20)\nmessage("${CMAKE_BUILD_TYPE}")\n')
+
+    def test_detect_language_by_file_name(self) -> None:
+        self.assertEqual(cleaner.detect_language(Path("Dockerfile")), "dockerfile")
+        self.assertEqual(cleaner.detect_language(Path("Dockerfile.dev")), "dockerfile")
+        self.assertEqual(cleaner.detect_language(Path("CMakeLists.txt")), "cmake")
+        self.assertEqual(cleaner.detect_language(Path("compose.yaml")), "yaml")
+        self.assertIsNone(cleaner.detect_language(Path("notes.txt")))
+
+
 class AutolinkTests(unittest.TestCase):
     def test_markdown_autolink_in_string(self) -> None:
         src = 'url = "[https://example.com/a](https://example.com/a)"'

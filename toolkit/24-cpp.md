@@ -102,17 +102,10 @@ Find the data races, lock-order inversions and missed notifications (condition_v
 Give an interleaving that shows the bug, then the fix. Say what each mutex protects.
 ```
 
-### CMake project setup
+### CMake
 
-```text
-Create a modern CMake (>= {{3.20}}) setup for this C++ project:
-- Targets: {{library / executable names and sources}}. Standard {{C++20}} through target_compile_features.
-- Warnings per target (MSVC /W4, others -Wall -Wextra -Wpedantic), with an option to turn them into errors.
-- Dependencies: {{e.g. fmt, GoogleTest}} through {{FetchContent / find_package / vcpkg}}.
-- Tests registered with CTest; a sanitizer option (ASan+UBSan) for non-MSVC builds.
-- No global include_directories / add_definitions; everything per target.
-Give the complete CMakeLists.txt files and the configure/build/test commands.
-```
+The CMake prompts (project setup, modernizing, dependencies, find_package and link errors, presets, install/export)
+are in [31-cmake.md](31-cmake.md).
 
 ### Write tests
 

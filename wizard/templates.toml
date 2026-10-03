@@ -175,6 +175,48 @@ C++ CONVENTIONS:
 - No `using namespace` in headers. Suggest ASan/UBSan (TSan for threads) when debugging.
 '''
 
+[blocks.lang_dockerfile]
+kind = "language"
+label = "Dockerfile"
+text = '''
+DOCKERFILE CONVENTIONS:
+- Docker with BuildKit. Pin base images to version tags (never latest); prefer slim/distroless, and warn about musl (alpine) vs glibc issues.
+- Multi-stage builds: build tools only in the builder stage, a minimal runtime stage.
+- Cache-friendly order: copy dependency manifests + lock files first, install, then copy the source. BuildKit cache mounts for package caches. Always a .dockerignore.
+- apt-get update && install --no-install-recommends && rm -rf /var/lib/apt/lists/* in ONE layer; pipefail for pipes.
+- Non-root USER with a fixed UID; no secrets in ENV/ARG/layers (RUN --mount=type=secret); no unverified curl | sh.
+- Exec-form CMD/ENTRYPOINT (JSON array); WORKDIR not cd; COPY not ADD; HEALTHCHECK where useful; logs to stdout/stderr; config via env.
+- hadolint-clean. A line-continuation backslash must be the last character on the line.
+'''
+
+[blocks.lang_compose]
+kind = "language"
+label = "Docker Compose"
+text = '''
+DOCKER COMPOSE CONVENTIONS:
+- Compose v2 (`docker compose`), Compose Specification: NO top-level `version:` key. File name compose.yaml (+ override files or profiles for dev/prod).
+- Pinned image tags; build: with context/dockerfile/target for local images; no container_name unless needed.
+- Config from .env with defaults (${VAR:-default}, ${VAR:?required}); no committed secrets; provide .env.example.
+- Real healthcheck: definitions, with depends_on: condition: service_healthy; apps still retry their connections.
+- Services reach each other by service name; publish only the needed ports, bound to 127.0.0.1 for dev-only access.
+- Named volumes for data, bind mounts only for dev source code. Restart policies and resource limits for long-running services.
+- YAML: 2-space indentation, no tabs; quote ports and ambiguous scalars. Validate with `docker compose config`.
+'''
+
+[blocks.lang_cmake]
+kind = "language"
+label = "CMake"
+text = '''
+CMAKE CONVENTIONS:
+- Modern target-based CMake (respect my minimum version): target_sources / target_include_directories / target_compile_features / target_compile_options / target_link_libraries, each with deliberate PRIVATE/PUBLIC/INTERFACE.
+- No global include_directories, add_definitions, link_libraries or CMAKE_CXX_FLAGS edits. No file(GLOB) for sources.
+- Standard via target_compile_features (or CMAKE_CXX_STANDARD + REQUIRED ON + EXTENSIONS OFF).
+- Compiler-aware warnings per target (MSVC /W4 /permissive-, others -Wall -Wextra -Wpedantic) using generator expressions; an option for warnings-as-errors.
+- Imported targets (Foo::Foo) instead of ${FOO_LIBRARIES}; alias targets for our libraries; install/export with a package config when others consume them.
+- CMakePresets.json for common configurations; CTest for tests; multi-config generators: use $<CONFIG>, not CMAKE_BUILD_TYPE.
+- Short comments on non-obvious lines.
+'''
+
 # ---------------------------------------------------------------------------
 # Output formats
 # ---------------------------------------------------------------------------
@@ -1098,27 +1140,6 @@ Toolchain: {{toolchain}}
 3) Fix it. If concepts/static_assert would make the error clearer next time, show how.
 '''
 
-[[tasks]]
-id = "cmake_setup"
-category = "C++"
-title = "CMake project setup"
-description = "Modern, target-based CMake with tests and sanitizers."
-fields = [
-  { name = "targets", label = "Targets and sources", type = "textarea", required = true },
-  { name = "standard", label = "Standard", type = "select", options = ["C17", "C++17", "C++20", "C++23"], required = true },
-  { name = "deps", label = "Dependencies and how to get them", type = "text", placeholder = "fmt, GoogleTest via FetchContent" },
-]
-template = '''
-Create a modern CMake (>= 3.20) setup for this project:
-- Targets: {{targets}}
-- Standard: {{standard}}, set through target_compile_features.
-- Dependencies: {{deps}}
-- Warnings per target (MSVC /W4, others -Wall -Wextra -Wpedantic), with an option to turn them into errors.
-- Tests registered with CTest; a sanitizer option (ASan+UBSan) for non-MSVC builds.
-- No global include_directories / add_definitions; everything per target.
-Give the complete CMakeLists.txt files and the configure/build/test commands.
-'''
-
 # ===========================================================================
 # Tasks: TypeScript
 # ===========================================================================
@@ -1434,6 +1455,326 @@ Input sample:
 Goal: {{goal}}
 Preferred tool: {{tool}}
 Explain each part. Note any GNU vs BSD/macOS differences (sed -i, date, grep -P) that matter.
+'''
+
+# ===========================================================================
+# Tasks: Docker
+# ===========================================================================
+
+[[tasks]]
+id = "docker_write"
+category = "Docker"
+title = "Write a Dockerfile"
+description = "Production multi-stage Dockerfile + .dockerignore."
+fields = [
+  { name = "stack", label = "App type", type = "select", options = ["Python (FastAPI/Flask/Django)", "Node.js", "TypeScript (Node)", "Rust", "Java (Spring Boot)", "Kotlin (JVM)", "C++ (CMake)", "Static site (nginx)"], required = true },
+  { name = "build", label = "Build command", type = "text", placeholder = "npm ci && npm run build" },
+  { name = "run", label = "Run command", type = "text", required = true, placeholder = "node dist/server.js" },
+  { name = "port", label = "Port", type = "text", placeholder = "8080" },
+  { name = "env", label = "Config env vars", type = "text", placeholder = "DATABASE_URL, LOG_LEVEL" },
+  { name = "constraints", label = "Base image / registry constraints", type = "text", placeholder = "only images from registry.company.local" },
+  { name = "health", label = "Health endpoint", type = "text", placeholder = "/health" },
+]
+template = '''
+Write a production Dockerfile and .dockerignore for a {{stack}} app.
+- Build command: {{build}}
+- Run command: {{run}}
+- Port: {{port}}
+- Config via env vars: {{env}}
+- Base image constraints: {{constraints}}
+- HEALTHCHECK on: {{health}}
+
+Requirements: multi-stage, non-root user, pinned base images, cache-friendly layer order, BuildKit cache mounts, exec-form CMD. Tell me the expected image size.
+Give the build and run commands, and explain each stage in one line.
+'''
+
+[[tasks]]
+id = "docker_review"
+category = "Docker"
+title = "Review / harden a Dockerfile"
+description = "Security, caching, size, PID 1, hadolint."
+fields = [
+  { name = "dockerfile", label = "Dockerfile", type = "code", lang = "dockerfile", required = true },
+  { name = "ignore", label = ".dockerignore (optional)", type = "code" },
+]
+template = '''
+Review this Dockerfile as a strict reviewer. Check:
+- Base image pinning, unnecessary packages, root user, secrets in ENV/ARG/layers, ADD vs COPY, curl | sh.
+- Layer cache order (do source changes reinstall dependencies?), missing .dockerignore entries, cleanup not in the same RUN layer.
+- Shell-form vs exec-form CMD/ENTRYPOINT (signal handling, PID 1), missing pipefail.
+- What hadolint would flag (DL/SC codes).
+List the issues by severity, then give the improved Dockerfile.
+
+{{dockerfile}}
+
+.dockerignore:
+{{ignore}}
+'''
+
+[[tasks]]
+id = "docker_build_fail"
+category = "Docker"
+title = "docker build fails"
+description = "Context, CRLF, arch, proxy/certificates, network."
+fields = [
+  { name = "output", label = "Build output (--progress=plain)", type = "code", required = true },
+  { name = "dockerfile", label = "Dockerfile", type = "code", lang = "dockerfile", required = true },
+  { name = "env", label = "Docker version + host", type = "text", placeholder = "Docker Desktop 4.30 on Windows (WSL2), behind corporate proxy" },
+]
+template = '''
+`docker build` fails:
+{{output}}
+Environment: {{env}}
+
+{{dockerfile}}
+
+Diagnose it. Common suspects: files missing from the build context or excluded by .dockerignore, CRLF line endings in shell scripts (/bin/sh^M: bad interpreter), musl vs glibc, an arch mismatch (arm64 vs amd64), a corporate proxy or TLS interception (certificates), and network access during the build.
+'''
+
+[[tasks]]
+id = "docker_shrink"
+category = "Docker"
+title = "Shrink the image"
+description = "Find the big layers and cut them."
+fields = [
+  { name = "size", label = "Current size", type = "text", required = true, placeholder = "1.4 GB" },
+  { name = "dockerfile", label = "Dockerfile", type = "code", lang = "dockerfile", required = true },
+  { name = "history", label = "docker history --no-trunc output", type = "code" },
+]
+template = '''
+This image is {{size}}. Make it smaller without breaking it.
+
+{{dockerfile}}
+
+Layer history:
+{{history}}
+
+Find which layers are big and why. Propose changes ranked by the size saved: multi-stage, a slimmer base (warn about musl/glibc), removing build deps, --no-install-recommends, cleaning caches in the same layer, copying only the runtime artifacts. Give the new Dockerfile and the expected size.
+'''
+
+[[tasks]]
+id = "docker_runtime"
+category = "Docker"
+title = "Container exits / port not responding"
+description = "Diagnose a container that crashes, restarts or is unreachable."
+fields = [
+  { name = "symptom", label = "Symptom", type = "text", required = true, placeholder = "exits immediately with code 1" },
+  { name = "run", label = "Run command", type = "text", placeholder = "docker run -p 8080:8080 myapp" },
+  { name = "logs", label = "docker logs", type = "code" },
+  { name = "dockerfile", label = "Dockerfile", type = "code", lang = "dockerfile" },
+]
+template = '''
+The container {{symptom}}.
+Run command: {{run}}
+
+Logs:
+{{logs}}
+
+{{dockerfile}}
+
+Find the cause. Check: the app listening on 127.0.0.1 instead of 0.0.0.0, a wrong CMD/ENTRYPOINT combination, a missing env var, file permissions for the non-root user, and the wrong working directory.
+'''
+
+# ===========================================================================
+# Tasks: Compose
+# ===========================================================================
+
+[[tasks]]
+id = "compose_create"
+category = "Compose"
+title = "Create a compose project"
+description = "Services, health checks, .env, dev/prod setup, volumes."
+fields = [
+  { name = "services", label = "Services", type = "textarea", required = true, placeholder = "api (built from ./api), worker, postgres 16, redis 7" },
+  { name = "dev", label = "Dev needs", type = "textarea", placeholder = "hot reload for api, debugger port" },
+  { name = "split", label = "Dev/prod split via", type = "select", options = ["override file", "profiles"], required = true },
+  { name = "host", label = "Host", type = "select", options = ["Windows + Docker Desktop (WSL2)", "Linux", "macOS"] },
+]
+template = '''
+Create a Docker Compose setup with these services:
+{{services}}
+
+Dev needs:
+{{dev}}
+
+Host: {{host}}
+
+- Separate dev and prod-like setups using: {{split}}. Dev: bind mounts and ports on 127.0.0.1. Prod-like: no bind mounts, restart policies, resource limits.
+- Health checks for every service, with depends_on: condition: service_healthy.
+- Config through .env with a committed .env.example; no secrets in the compose files.
+- Named volumes for data; one-off tasks (migrations, seeding) as a separate service or profile.
+Give all the files, plus the commands to: start dev, start prod-like, run migrations, view logs, reset data.
+'''
+
+[[tasks]]
+id = "compose_review"
+category = "Compose"
+title = "Review a compose file"
+description = "Obsolete syntax, health checks, exposure, volumes, YAML pitfalls."
+fields = [
+  { name = "compose", label = "compose.yaml", type = "code", lang = "yaml", required = true },
+]
+template = '''
+Review this compose file as a strict reviewer:
+- Obsolete syntax (top-level version:, links:, docker-compose v1 behavior), unpinned images, secrets in the file.
+- depends_on without health checks; health checks that don't test readiness.
+- Ports published to 0.0.0.0 that should be internal or bound to 127.0.0.1; services that should be on separate networks.
+- Bind mounts vs named volumes; data that would be lost on `docker compose down -v`.
+- YAML pitfalls: tabs, unquoted ports/booleans/octal-looking values.
+List the issues by severity, then give the improved file.
+
+{{compose}}
+'''
+
+[[tasks]]
+id = "compose_network"
+category = "Compose"
+title = "Services can't reach each other"
+description = "Connection refused / could not resolve host between containers."
+fields = [
+  { name = "from", label = "Client service", type = "text", required = true },
+  { name = "to", label = "Target service", type = "text", required = true },
+  { name = "error", label = "Error", type = "text", required = true, placeholder = "connection refused" },
+  { name = "settings", label = "Connection settings the client uses", type = "text", placeholder = "postgres://localhost:5432/app" },
+  { name = "compose", label = "compose.yaml", type = "code", lang = "yaml", required = true },
+  { name = "logs", label = "docker compose ps + logs", type = "code" },
+]
+template = '''
+Service {{from}} can't connect to {{to}}: {{error}}
+Connection settings used by {{from}}: {{settings}}
+
+{{compose}}
+
+ps / logs:
+{{logs}}
+
+Diagnose it. Common causes: localhost/127.0.0.1 used inside a container instead of the service name, the container port vs the published host port, the target listening on 127.0.0.1 instead of 0.0.0.0, the target not ready yet (no health check), different networks.
+'''
+
+[[tasks]]
+id = "compose_from_run"
+category = "Compose"
+title = "Convert docker run to compose"
+description = "Turn docker run commands into a compose.yaml."
+fields = [
+  { name = "commands", label = "docker run commands", type = "code", lang = "bash", required = true },
+]
+template = '''
+Convert these docker run commands into a compose.yaml, keeping every option (ports, volumes, env, networks, restart, user, command, labels):
+
+{{commands}}
+
+Point out any options that behave differently in compose. Then, in a separate, clearly marked step, improve the obvious problems (unpinned images, missing health checks).
+'''
+
+# ===========================================================================
+# Tasks: CMake
+# ===========================================================================
+
+[[tasks]]
+id = "cmake_setup"
+category = "CMake"
+title = "CMake project setup"
+description = "Modern, target-based CMake with presets, tests and sanitizers."
+fields = [
+  { name = "targets", label = "Targets and sources", type = "textarea", required = true },
+  { name = "standard", label = "Standard", type = "select", options = ["C17", "C++17", "C++20", "C++23"], required = true },
+  { name = "minimum", label = "Minimum CMake version", type = "text", placeholder = "3.21" },
+  { name = "deps", label = "Dependencies and how to get them", type = "text", placeholder = "fmt, GoogleTest via FetchContent" },
+  { name = "platforms", label = "Platforms / generators", type = "text", placeholder = "Windows (VS 2022, Ninja), Linux (gcc)" },
+]
+template = '''
+Create a modern CMake setup for this project:
+- Targets: {{targets}}
+- Standard: {{standard}}, set through target_compile_features.
+- Minimum CMake: {{minimum}}
+- Dependencies: {{deps}}
+- Platforms / generators: {{platforms}}
+- Per-target, compiler-aware warnings with a warnings-as-errors option; an ASan+UBSan option for non-MSVC builds.
+- Tests with CTest; CMakePresets.json with debug, release and ci presets.
+- No global include_directories / add_definitions / CMAKE_CXX_FLAGS; no file(GLOB) for sources.
+Give every CMakeLists.txt in full, CMakePresets.json, and the configure/build/test commands.
+'''
+
+[[tasks]]
+id = "cmake_modernize"
+category = "CMake"
+title = "Modernize CMakeLists"
+description = "Global flags and variables -> targets and usage requirements."
+fields = [
+  { name = "minimum", label = "Minimum CMake version", type = "text", placeholder = "3.21" },
+  { name = "code", label = "CMakeLists.txt file(s)", type = "code", lang = "cmake", required = true },
+]
+template = '''
+Modernize this CMake code to target-based CMake without changing what gets built.
+Minimum CMake version: {{minimum}}
+- Global include_directories / add_definitions / link_libraries / CMAKE_CXX_FLAGS -> per-target commands with the correct PRIVATE/PUBLIC/INTERFACE.
+- file(GLOB) sources -> explicit lists; hard-coded paths and compiler flags -> generator expressions and target_compile_features.
+- ${FOO_LIBRARIES}-style variables -> imported targets (Foo::Foo) where they exist.
+Do it in reviewable steps, and list anything whose behavior might change (e.g. usage requirements now propagate to dependents).
+
+{{code}}
+'''
+
+[[tasks]]
+id = "cmake_dependency"
+category = "CMake"
+title = "Add a dependency"
+description = "FetchContent / find_package / vcpkg / Conan, with the right visibility."
+fields = [
+  { name = "library", label = "Library + version", type = "text", required = true, placeholder = "spdlog 1.14" },
+  { name = "method", label = "Method", type = "select", options = ["FetchContent", "find_package + vcpkg", "find_package + Conan", "system package"], required = true },
+  { name = "target", label = "Target that uses it", type = "text", required = true },
+  { name = "constraints", label = "Constraints", type = "text", placeholder = "must build offline / behind proxy / in CI" },
+  { name = "code", label = "Current CMakeLists.txt", type = "code", lang = "cmake" },
+]
+template = '''
+Add {{library}} to this CMake project using {{method}}, linked to {{target}}.
+Constraints: {{constraints}}
+- Use the correct visibility (PRIVATE unless it appears in our public headers).
+- Say how it works offline / in CI if relevant (FETCHCONTENT_TRY_FIND_PACKAGE_MODE, a local mirror, FETCHCONTENT_SOURCE_DIR_<NAME>, vcpkg binary caching).
+- If the library has no CMake config, write a minimal Find module or IMPORTED target.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "cmake_error"
+category = "CMake"
+title = "Configure / find_package / link error"
+description = "Explain CMake errors from CMake's point of view."
+fields = [
+  { name = "output", label = "cmake or build output (from the first error)", type = "code", required = true },
+  { name = "env", label = "CMake version, generator, platform, package manager", type = "text", placeholder = "3.29, Ninja, Windows MSVC, vcpkg" },
+  { name = "code", label = "Relevant CMakeLists.txt parts", type = "code", lang = "cmake", required = true },
+]
+template = '''
+CMake/build fails:
+{{output}}
+Environment: {{env}}
+
+{{code}}
+
+Explain the cause from CMake's point of view. For configure errors: search paths, CMAKE_PREFIX_PATH, <Pkg>_DIR, toolchain file order, config vs module mode, triplet mismatch. For link errors: missing target_link_libraries, wrong visibility, static/shared mix-up, link order, MSVC runtime mismatch (CMAKE_MSVC_RUNTIME_LIBRARY). Fix it, preferring presets or the command line over hard-coded paths.
+'''
+
+[[tasks]]
+id = "cmake_presets"
+category = "CMake"
+title = "CMakePresets.json"
+description = "Configure/build/test/workflow presets for all platforms."
+fields = [
+  { name = "presets", label = "Presets wanted", type = "textarea", required = true, placeholder = "windows-msvc-debug, windows-msvc-release, linux-gcc-debug, linux-clang-asan, ci" },
+  { name = "vcpkg", label = "Uses vcpkg?", type = "select", options = ["no", "yes"] },
+  { name = "options", label = "Project cache options", type = "text", placeholder = "MYPROJ_BUILD_TESTS, MYPROJ_WARNINGS_AS_ERRORS" },
+]
+template = '''
+Write CMakePresets.json for this project:
+- Configure presets: {{presets}} (binary dirs under out/build/<preset>).
+- vcpkg toolchain integration: {{vcpkg}}
+- Cache variables for our options: {{options}}
+- Matching build and test presets (output on failure), and a workflow preset for CI.
+Explain how to use them from the command line and from VS Code (CMake Tools).
 '''
 
 # ===========================================================================

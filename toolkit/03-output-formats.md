@@ -33,9 +33,14 @@ Return the COMPLETE contents of {{path}}, ready to save over the existing file. 
 with no placeholders, ellipses or "unchanged" comments.
 ```
 
+> **Want a patch you can `git apply`?** Don't ask Copilot for a diff. Ask for format A or B, then paste the
+> answer into the wizard's **Patch builder** tab (or run `python wizard/patcher.py answer.md --root .`). It computes
+> an exact patch against your current files and can run `git apply` for you.
+
 ## C. Unified diff
 
-Best when you'll apply it with `git apply`. Copilot sometimes miscounts the hunk headers, so it's less reliable.
+Use this only when you can't use the Patch builder. Copilot often miscounts hunk headers and uses stale
+context lines, so these diffs frequently fail to apply.
 
 ```text
 Return a unified diff (git format, paths a/ and b/ relative to the repo root) that I can apply with

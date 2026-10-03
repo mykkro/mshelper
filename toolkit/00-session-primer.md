@@ -2,7 +2,8 @@
 
 Paste this as the **first message** of every coding chat. It sets the working rules for the
 whole conversation. For a specific language, also append its block from the matching
-`2x-*.md` file (Python, JavaScript, Rust, C, C++, TypeScript, Java, Kotlin, Bash).
+`2x-*.md` / `3x-*.md` file (Python, JavaScript, Rust, C, C++, TypeScript, Java, Kotlin, Bash, Dockerfile,
+Docker Compose, CMake).
 
 Copilot should reply with only "Ready." Then send your task.
 

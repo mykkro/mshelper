@@ -12,6 +12,7 @@
     <nav class="tabs" role="tablist">
       <button type="button" role="tab" class="tab" data-view="builder">Prompt builder</button>
       <button type="button" role="tab" class="tab" data-view="cleaner">Code cleaner</button>
+      <button type="button" role="tab" class="tab" data-view="patch">Patch builder</button>
     </nav>
     <div class="topbar-options" id="builder-options">
       <label>Primer
@@ -98,7 +99,10 @@
             <option value="rust">Rust</option>
             <option value="c">C</option>
             <option value="cpp">C++</option>
-            <option value="bash">Bash (typography + links only)</option>
+            <option value="bash">Bash</option>
+            <option value="dockerfile">Dockerfile</option>
+            <option value="yaml">YAML / Docker Compose</option>
+            <option value="cmake">CMake</option>
             <option value="html">HTML (+ inline scripts)</option>
           </select>
         </label>
@@ -122,6 +126,51 @@
       </div>
       <textarea id="clean-output" class="code" rows="14" spellcheck="false"></textarea>
       <ul id="clean-report" class="report"></ul>
+    </section>
+  </main>
+
+  <main class="main cleaner" id="view-patch" hidden>
+    <section class="card">
+      <h2>Build a git patch from Copilot's answer</h2>
+      <p class="muted">
+        Paste an answer containing <code>FILE: path</code> labels followed by complete files or
+        <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; SEARCH</code> / <code>=======</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; REPLACE</code>
+        blocks. The patch is computed against your current files, so the hunk headers are always correct.
+        SEARCH text is matched exactly, then ignoring trailing whitespace, then ignoring indentation.
+      </p>
+      <div class="cleaner-options">
+        <label class="grow">Project root
+          <input id="patch-root" type="text" placeholder="C:\path\to\project">
+        </label>
+        <label class="grow">Target file <span class="muted">(only if the answer has no FILE: labels)</span>
+          <input id="patch-default" type="text" placeholder="src/app.py">
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="patch-clean" checked> Run the code cleaner on the answer first</label>
+      <label>Copilot's answer
+        <textarea id="patch-input" class="code" rows="14" spellcheck="false" placeholder="Paste the whole answer here…"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" id="btn-patch" class="primary">Build patch</button>
+        <span id="patch-status" role="status"></span>
+      </div>
+    </section>
+
+    <section class="card" id="patch-output-card" hidden>
+      <div class="output-head">
+        <h2>Patch</h2>
+        <span id="patch-count" class="badge"></span>
+        <button type="button" id="btn-patch-copy">Copy</button>
+        <button type="button" id="btn-patch-download">Download .patch</button>
+      </div>
+      <ul id="patch-files" class="report"></ul>
+      <textarea id="patch-output" class="code" rows="16" spellcheck="false" readonly></textarea>
+      <div class="actions">
+        <button type="button" id="btn-patch-check">git apply --check</button>
+        <button type="button" id="btn-patch-apply" class="primary">git apply</button>
+        <span class="muted">or manually: <code>git apply copilot.patch</code></span>
+      </div>
+      <pre id="patch-apply-output" class="apply-output" hidden></pre>
     </section>
   </main>
 

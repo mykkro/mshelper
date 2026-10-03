@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import cleaner
+import patcher
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,15 @@ def read_project_file(root: Path, rel: str) -> str:
         raise WizardError(f"Not a UTF-8 text file: {rel}") from err
 
 
+def fence_lang(rel: str) -> str:
+    name = Path(rel).name.lower()
+    if name == "dockerfile" or name.startswith("dockerfile.") or name == "containerfile":
+        return "dockerfile"
+    if name == "cmakelists.txt":
+        return "cmake"
+    return EXT_LANG.get(Path(rel).suffix.lower(), "")
+
+
 def build_context(project: dict[str, Any]) -> str:
     files = [f.strip() for f in project.get("files", []) if f.strip()]
     include_tree = bool(project.get("include_tree"))
@@ -219,7 +229,7 @@ def build_context(project: dict[str, Any]) -> str:
         sections.append("PROJECT LAYOUT\n" + fence(project_tree(root)))
     for rel in files:
         content = read_project_file(root, rel)
-        lang = EXT_LANG.get(Path(rel).suffix.lower(), "")
+        lang = fence_lang(rel)
         sections.append(f"FILE: {rel.replace(chr(92), '/')}\n" + fence(content, lang))
     return "\n\n".join(sections)
 
@@ -284,6 +294,27 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as err:
                     raise WizardError(str(err)) from err
                 self._json(result.to_dict())
+            elif path == "/api/patch":
+                root = resolve_root(str(data.get("root", "")))
+                try:
+                    result = patcher.build_patch(
+                        str(data.get("text", "")),
+                        patcher.file_reader(root),
+                        default_path=str(data.get("default_path", "")),
+                        clean=bool(data.get("clean", True)),
+                    )
+                except patcher.PatchError as err:
+                    raise WizardError(str(err)) from err
+                self._json(result.to_dict())
+            elif path == "/api/patch/apply":
+                root = resolve_root(str(data.get("root", "")))
+                patch = str(data.get("patch", ""))
+                if not patch.strip():
+                    raise WizardError("The patch is empty.")
+                for rel in patcher.patch_paths(patch):
+                    safe_join(root, rel)  # refuse patches that touch files outside the project
+                ok, output = patcher.git_apply(patch, root, check_only=bool(data.get("check_only", True)))
+                self._json({"ok": ok, "output": output})
             elif path == "/api/tree":
                 root = resolve_root(str(data.get("root", "")))
                 self._json({"root": str(root), "tree": project_tree(root),

@@ -330,11 +330,11 @@ async function copyOutput() {
 // Views
 // ---------------------------------------------------------------------------
 
+const VIEWS = ["builder", "cleaner", "patch"];
+
 function showView(view) {
-  const isCleaner = view === "cleaner";
-  $("#view-builder").hidden = isCleaner;
-  $("#builder-options").hidden = isCleaner;
-  $("#view-cleaner").hidden = !isCleaner;
+  for (const name of VIEWS) $(`#view-${name}`).hidden = name !== view;
+  $("#builder-options").hidden = view !== "builder";
   for (const tab of document.querySelectorAll(".tab")) {
     const active = tab.dataset.view === view;
     tab.classList.toggle("active", active);
@@ -351,6 +351,7 @@ function showView(view) {
 const LANG_BLOCK_TO_CLEANER = {
   lang_python: "python", lang_javascript: "javascript", lang_typescript: "typescript", lang_java: "java",
   lang_kotlin: "kotlin", lang_rust: "rust", lang_c: "c", lang_cpp: "cpp", lang_bash: "bash",
+  lang_dockerfile: "dockerfile", lang_compose: "yaml", lang_cmake: "cmake",
 };
 
 function setCleanStatus(message, isError = false) {
@@ -423,6 +424,123 @@ function resetFields() {
 }
 
 // ---------------------------------------------------------------------------
+// Patch builder
+// ---------------------------------------------------------------------------
+
+// The raw patch is kept here, not read back from the textarea: textareas normalize
+// CRLF to LF, which would break patches for files with Windows line endings.
+let currentPatch = "";
+
+function setPatchStatus(message, isError = false) {
+  const el = $("#patch-status");
+  el.textContent = message;
+  el.classList.toggle("error", isError);
+}
+
+function persistPatchPrefs() {
+  state.store.patch = {
+    root: $("#patch-root").value,
+    defaultPath: $("#patch-default").value,
+    clean: $("#patch-clean").checked,
+  };
+  saveStore();
+}
+
+async function buildPatch() {
+  const text = $("#patch-input").value;
+  if (!text.trim()) {
+    setPatchStatus("Paste Copilot's answer first.", true);
+    return;
+  }
+  persistPatchPrefs();
+  setPatchStatus("Building…");
+  try {
+    const result = await api("/api/patch", {
+      root: $("#patch-root").value,
+      default_path: $("#patch-default").value,
+      text,
+      clean: $("#patch-clean").checked,
+    });
+    renderPatchResult(result);
+    setPatchStatus("");
+  } catch (err) {
+    setPatchStatus(err.message, true);
+  }
+}
+
+function renderPatchResult(result) {
+  currentPatch = result.patch;
+  $("#patch-output-card").hidden = false;
+  $("#patch-output").value = result.patch || "(no changes)";
+  $("#patch-apply-output").hidden = true;
+
+  const errors = result.files.filter((f) => f.status === "error").length;
+  const changed = result.files.filter((f) => f.status === "modified" || f.status === "new").length;
+  const badge = $("#patch-count");
+  badge.textContent = `${changed} file${changed === 1 ? "" : "s"} changed${errors ? `, ${errors} failed` : ""}`;
+  badge.classList.toggle("warn", errors > 0);
+
+  const list = $("#patch-files");
+  list.replaceChildren();
+  for (const file of result.files) {
+    const li = document.createElement("li");
+    const tag = document.createElement("span");
+    tag.className = `tag ${file.status === "error" ? "error" : file.notes.length ? "review" : "fixed"}`;
+    tag.textContent = file.status;
+    const path = document.createElement("span");
+    path.className = "loc";
+    path.textContent = file.path;
+    const detail = document.createElement("span");
+    detail.textContent = [file.error, ...file.notes].filter(Boolean).join(" · ");
+    detail.style.whiteSpace = "pre-wrap";
+    li.append(tag, path, detail);
+    list.append(li);
+  }
+  const hasPatch = Boolean(currentPatch);
+  for (const id of ["#btn-patch-copy", "#btn-patch-download", "#btn-patch-check", "#btn-patch-apply"]) {
+    $(id).disabled = !hasPatch;
+  }
+}
+
+async function copyPatch() {
+  try {
+    await navigator.clipboard.writeText(currentPatch);
+    setPatchStatus("Patch copied.");
+  } catch {
+    setPatchStatus("Clipboard blocked: use Download instead.", true);
+  }
+}
+
+function downloadPatch() {
+  const blob = new Blob([currentPatch], { type: "text/x-diff" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "copilot.patch";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function gitApply(checkOnly) {
+  if (!checkOnly && !confirm("Apply this patch to the files in the project root?")) return;
+  const out = $("#patch-apply-output");
+  try {
+    const result = await api("/api/patch/apply", {
+      root: $("#patch-root").value,
+      patch: currentPatch,
+      check_only: checkOnly,
+    });
+    out.hidden = false;
+    out.textContent = (checkOnly ? "git apply --check: " : "git apply: ") + (result.ok ? "OK\n" : "FAILED\n") + result.output;
+    out.className = `apply-output ${result.ok ? "ok" : "fail"}`;
+  } catch (err) {
+    out.hidden = false;
+    out.textContent = err.message;
+    out.className = "apply-output fail";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
@@ -461,8 +579,9 @@ async function init() {
   $("#output").addEventListener("input", updateCharCount);
   document.addEventListener("keydown", (e) => {
     if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
-    if ($("#view-cleaner").hidden) generate();
-    else cleanCode();
+    if (!$("#view-cleaner").hidden) cleanCode();
+    else if (!$("#view-patch").hidden) buildPatch();
+    else generate();
   });
 
   for (const tab of document.querySelectorAll(".tab")) {
@@ -478,7 +597,19 @@ async function init() {
     await copyFrom($("#clean-output"));
     setCleanStatus("Copied cleaned code.");
   });
-  showView(state.store.view === "cleaner" ? "cleaner" : "builder");
+  const patchPrefs = state.store.patch || {};
+  $("#patch-root").value = patchPrefs.root || $("#project-root").value;
+  $("#patch-default").value = patchPrefs.defaultPath || "";
+  $("#patch-clean").checked = patchPrefs.clean ?? true;
+  $("#patch-root").addEventListener("change", persistPatchPrefs);
+  $("#patch-default").addEventListener("change", persistPatchPrefs);
+  $("#btn-patch").addEventListener("click", buildPatch);
+  $("#btn-patch-copy").addEventListener("click", copyPatch);
+  $("#btn-patch-download").addEventListener("click", downloadPatch);
+  $("#btn-patch-check").addEventListener("click", () => gitApply(true));
+  $("#btn-patch-apply").addEventListener("click", () => gitApply(false));
+
+  showView(VIEWS.includes(state.store.view) ? state.store.view : "builder");
 
   const last = state.store.lastTask;
   selectTask(state.data.tasks.some((t) => t.id === last) ? last : state.data.tasks[0].id);

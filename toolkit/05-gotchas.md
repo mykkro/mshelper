@@ -109,6 +109,14 @@ python wizard\cleaner.py path\to\file.py --write    # apply the safe fixes
 - **Cause:** you changed the file (applied steps, fixed something by hand) but Copilot remembers an earlier version.
 - **Symptom:** SEARCH blocks don't match, or reverted changes reappear.
 - **Fix:** paste the current file and say "This is the current version. Discard all earlier versions."
+  The wizard's **Patch builder** shows exactly which SEARCH block failed to match your current file.
+
+### 12b. Diffs from Copilot that won't apply
+
+- **Symptom:** `git apply` reports `corrupt patch at line N` or `patch does not apply`.
+- **Cause:** LLMs miscount hunk line numbers and reuse stale context lines.
+- **Fix:** don't ask for diffs. Ask for SEARCH/REPLACE blocks or complete files, and let the **Patch builder**
+  compute the patch from your real files.
 
 ### 13. Long chats drift: forgotten rules, repeated mistakes
 
@@ -133,3 +141,36 @@ python wizard\cleaner.py path\to\file.py --write    # apply the safe fixes
 
 - **Cause:** content filters on keywords (exploit, bypass, payload...).
 - **Fix:** state the defensive context ("I'm hardening our own service; review this input validation").
+
+---
+
+## Config and build files
+
+### 18. Trailing space after a line-continuation backslash
+
+- **Symptom:** a Dockerfile `RUN` or a bash command breaks in the middle: `unknown instruction: &&`,
+  `apt-get: command not found`, a flag treated as a separate command.
+- **Cause:** `\ ` (backslash + space) at the end of a line is not a line continuation. Chat rendering and copying
+  sometimes add trailing spaces.
+- **Fix:** the Code cleaner removes whitespace after a final backslash in all languages (Dockerfile, bash,
+  CMake, C macros, Python).
+
+### 19. Outdated Docker Compose syntax
+
+- **Symptom:** the warning `the attribute 'version' is obsolete`, or commands starting with `docker-compose` (v1).
+- **Prevent:** the Compose language block says "Compose v2, no top-level version:".
+- **Fix:** delete the `version:` line; use `docker compose`.
+
+### 20. YAML surprises in compose files
+
+- **Symptoms:** `found character '\t' that cannot start any token`; `NO` turns into `false`; port `"22:22"`
+  parsed as a base-60 number in old parsers; `08` treated as a string or an invalid octal.
+- **Prevent:** 2-space indentation, and quote ports and ambiguous scalars.
+- **Fix:** the cleaner (language *YAML*) reports tab indentation. Run `docker compose config` to validate.
+
+### 21. Old-style CMake
+
+- **Symptom:** global `include_directories`, `CMAKE_CXX_FLAGS` edits, `file(GLOB ...)` sources, `${FOO_LIBRARIES}`
+  variables. It works until you add a second target or a dependency.
+- **Prevent:** the CMake language block (target-based only).
+- **Fix:** the wizard task *CMake → Modernize CMakeLists*.
