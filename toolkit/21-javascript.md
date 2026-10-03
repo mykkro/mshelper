@@ -1,18 +1,21 @@
-# JavaScript / TypeScript
+# JavaScript
+
+For TypeScript projects, use the language block from [25-typescript.md](25-typescript.md). The
+framework prompts below (React, Express, async, testing, tooling) work for both JS and TS.
 
 ## Language block (paste after the session primer)
 
 ```text
-JAVASCRIPT/TYPESCRIPT CONVENTIONS for this conversation:
-- Runtime: {{Node 20 / browser / both}}. Language: {{TypeScript 5.x, strict mode / modern JS (ES2022)}}.
+JAVASCRIPT CONVENTIONS for this conversation:
+- Runtime: {{Node 20 / browser / both}}. Language: modern JavaScript ({{ES2022}}).
 - Modules: {{ESM (import/export) / CommonJS}}. Package manager: {{npm / pnpm / yarn}}.
 - Use const by default, let when you must reassign, never var. Use ===. Use optional chaining and ??.
 - Async: async/await, no raw .then chains. Always handle rejections; never leave floating promises.
   Use Promise.all / allSettled for independent work.
-- TypeScript: no `any` (use `unknown` + narrowing), prefer type unions and discriminated unions over
-  enums, explicit return types on exported functions, and validate external data at the boundaries with {{zod}}.
+- Types without TypeScript: JSDoc type annotations on exported functions, and `// @ts-check` at the top
+  of files {{if the project uses it}}. Validate external data at the boundaries.
 - Errors: throw Error (or subclasses) with useful messages; don't throw strings. Use `cause` when wrapping.
-- Code must pass {{eslint + prettier}} and `tsc --noEmit`.
+- Code must pass {{eslint + prettier}}.
 - Framework: {{React 18 with function components + hooks / Vue 3 / Express / Fastify / none}}.
 - Tests: {{vitest / jest}}, plus {{@testing-library/react / supertest}} where relevant.
 - Prefer the platform and standard library (fetch, URL, structuredClone, Array methods) over adding
@@ -21,28 +24,7 @@ JAVASCRIPT/TYPESCRIPT CONVENTIONS for this conversation:
 
 ---
 
-## JS/TS prompts
-
-### Convert JS to TypeScript
-
-```text
-Convert this JavaScript file to strict TypeScript.
-- Infer precise types from usage. Create interfaces/types for the data shapes.
-- No `any`. Where the type is really unknown, use `unknown` and narrow it.
-- Mark places where the conversion exposed potential runtime bugs (null access, wrong arity, etc.).
-- Keep the runtime behavior identical.
-{{code}}
-```
-
-### Typing a tricky value
-
-```text
-I need a TypeScript type for {{description}}. Example values:
-{{examples}}
-It should reject: {{invalid examples}}
-Give the type, explain any advanced features you used (generics, conditional/mapped types), and
-show compile-time tests using `// @ts-expect-error` lines.
-```
+## JavaScript prompts
 
 ### React component
 

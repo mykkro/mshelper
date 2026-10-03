@@ -311,16 +311,107 @@ function updateCharCount() {
   $("#size-warning").hidden = !tooLong;
 }
 
-async function copyOutput() {
-  const text = $("#output").value;
+async function copyFrom(textarea) {
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(textarea.value);
   } catch {
     // Fallback for browsers that block the async clipboard API.
-    $("#output").select();
+    textarea.select();
     document.execCommand("copy");
   }
+}
+
+async function copyOutput() {
+  await copyFrom($("#output"));
   setStatus("Copied to clipboard. Paste it into Copilot.");
+}
+
+// ---------------------------------------------------------------------------
+// Views
+// ---------------------------------------------------------------------------
+
+function showView(view) {
+  const isCleaner = view === "cleaner";
+  $("#view-builder").hidden = isCleaner;
+  $("#builder-options").hidden = isCleaner;
+  $("#view-cleaner").hidden = !isCleaner;
+  for (const tab of document.querySelectorAll(".tab")) {
+    const active = tab.dataset.view === view;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  state.store.view = view;
+  saveStore();
+}
+
+// ---------------------------------------------------------------------------
+// Code cleaner
+// ---------------------------------------------------------------------------
+
+const LANG_BLOCK_TO_CLEANER = {
+  lang_python: "python", lang_javascript: "javascript", lang_typescript: "typescript", lang_java: "java",
+  lang_kotlin: "kotlin", lang_rust: "rust", lang_c: "c", lang_cpp: "cpp", lang_bash: "bash",
+};
+
+function setCleanStatus(message, isError = false) {
+  const el = $("#clean-status");
+  el.textContent = message;
+  el.classList.toggle("error", isError);
+}
+
+async function cleanCode() {
+  const code = $("#clean-input").value;
+  if (!code.trim()) {
+    setCleanStatus("Paste some code first.", true);
+    return;
+  }
+  state.store.cleaner = {
+    lang: $("#clean-lang").value,
+    quotes: $("#clean-quotes").checked,
+    entities: $("#clean-entities").checked,
+  };
+  saveStore();
+  try {
+    const result = await api("/api/clean", {
+      code,
+      lang: $("#clean-lang").value,
+      fix: true,
+      smart_quotes: $("#clean-quotes").checked,
+      html_entities: $("#clean-entities").checked,
+    });
+    renderCleanResult(result);
+    setCleanStatus("");
+  } catch (err) {
+    setCleanStatus(err.message, true);
+  }
+}
+
+function renderCleanResult(result) {
+  $("#clean-output-card").hidden = false;
+  $("#clean-output").value = result.code;
+  const fixedCount = result.changes.filter((c) => c.fixed).length;
+  const reviewCount = result.changes.length - fixedCount;
+  const badge = $("#clean-count");
+  badge.textContent = result.changes.length
+    ? `${fixedCount} fixed${reviewCount ? `, ${reviewCount} to review` : ""}`
+    : "no issues found";
+  badge.classList.toggle("warn", reviewCount > 0);
+
+  const report = $("#clean-report");
+  report.replaceChildren();
+  for (const change of result.changes) {
+    const li = document.createElement("li");
+    const loc = document.createElement("span");
+    loc.className = "loc";
+    loc.textContent = `${change.line}:${change.col}`;
+    const tag = document.createElement("span");
+    tag.className = `tag ${change.fixed ? "fixed" : "review"}`;
+    tag.textContent = change.fixed ? "fixed" : "review";
+    const msg = document.createElement("span");
+    msg.textContent = change.message;
+    li.append(loc, tag, msg);
+    report.append(li);
+  }
 }
 
 function resetFields() {
@@ -369,8 +460,25 @@ async function init() {
   $("#btn-copy").addEventListener("click", copyOutput);
   $("#output").addEventListener("input", updateCharCount);
   document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") generate();
+    if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
+    if ($("#view-cleaner").hidden) generate();
+    else cleanCode();
   });
+
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => showView(tab.dataset.view));
+  }
+  const cleanerPrefs = state.store.cleaner || {};
+  $("#clean-lang").value = cleanerPrefs.lang
+    || LANG_BLOCK_TO_CLEANER[$("#opt-language").value] || "python";
+  $("#clean-quotes").checked = cleanerPrefs.quotes ?? true;
+  $("#clean-entities").checked = cleanerPrefs.entities ?? false;
+  $("#btn-clean").addEventListener("click", cleanCode);
+  $("#btn-clean-copy").addEventListener("click", async () => {
+    await copyFrom($("#clean-output"));
+    setCleanStatus("Copied cleaned code.");
+  });
+  showView(state.store.view === "cleaner" ? "cleaner" : "builder");
 
   const last = state.store.lastTask;
   selectTask(state.data.tasks.some((t) => t.id === last) ? last : state.data.tasks[0].id);

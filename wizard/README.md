@@ -36,6 +36,36 @@ The character counter turns orange above ~15,000 characters, around where Copilo
 truncate or reject long prompts (the exact limit varies by tenant). If you hit it, deselect files or
 split the context across messages (see `toolkit/02-context-packing.md`).
 
+## Code cleaner
+
+The **Code cleaner** tab repairs damage that Copilot's chat rendering does to code
+(see `toolkit/05-gotchas.md`):
+
+| Artifact | Example | Action |
+|---|---|---|
+| Markdown/LaTeX escapes outside strings and comments | `arr\[0\]`, `\_\_init\_\_` | fixed |
+| Auto-linked URLs / file names | `href="[a.css](http://a.css)"`, `src="<a href=…>…</a>"` | fixed |
+| Smart quotes, no-break / zero-width spaces | `“hi”` | fixed (quotes optional) |
+| HTML entities | `&lt;` | fixed if enabled |
+| Surrounding Markdown fence | ```` ```python ```` | removed |
+| Invalid escapes inside strings (Python, C, C++, Rust, Java, Kotlin) | `"\["`, `"\d"` | reported: might be a regex |
+| Stray backslash before a letter outside strings | `x \n y` | reported |
+| Broken HTML structure | attribute text outside tags, `<script src>` + inline code, `</link>`, unclosed `<script>` | reported |
+
+Languages: Python, JavaScript, TypeScript, Java, Kotlin, Rust, C, C++, Bash, HTML. The lexer knows each
+language's strings, comments, raw strings and text blocks, JS regex literals, Rust lifetimes and C++ digit
+separators, so legitimate backslashes are left alone. In *HTML* mode, inline `<script>` bodies are cleaned as
+JavaScript. In *Bash* a backslash outside quotes is a real escape (`\;`, `\*`), so only the typography and
+auto-link fixes apply.
+
+The same cleaner works from the command line, which is handy after saving several files:
+
+```powershell
+python cleaner.py src\app.py web\index.html            # report only (exit code 1 if issues found)
+python cleaner.py src\app.py --write                   # apply fixes in place (keeps CRLF/LF)
+python cleaner.py snippet.txt --lang rust --write
+```
+
 ## Add or edit templates
 
 Everything lives in [templates.toml](templates.toml). No code changes are needed. Reload the page
@@ -80,9 +110,10 @@ python -m unittest -v
 | File | Purpose |
 |------|---------|
 | `server.py` | HTTP server, template rendering, file bundling (stdlib only) |
+| `cleaner.py` | Code cleaner (also a CLI) |
 | `templates.toml` | All tasks and blocks |
 | `static/` | UI (`index.html`, `app.js`, `style.css`) |
-| `test_server.py` | Unit tests |
+| `test_server.py`, `test_cleaner.py` | Unit tests |
 
 ## Safety notes
 

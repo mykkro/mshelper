@@ -9,7 +9,11 @@
 <body>
   <header class="topbar">
     <h1>Prompt Wizard <span class="muted">for M365 Copilot</span></h1>
-    <div class="topbar-options">
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" class="tab" data-view="builder">Prompt builder</button>
+      <button type="button" role="tab" class="tab" data-view="cleaner">Code cleaner</button>
+    </nav>
+    <div class="topbar-options" id="builder-options">
       <label>Primer
         <select id="opt-primer" data-kind="primer"></select>
       </label>
@@ -22,7 +26,7 @@
     </div>
   </header>
 
-  <div class="layout">
+  <div class="layout" id="view-builder">
     <nav class="sidebar">
       <input id="task-search" type="search" placeholder="Search tasks…" aria-label="Search tasks">
       <div id="task-list"></div>
@@ -72,6 +76,54 @@
       </section>
     </main>
   </div>
+
+  <main class="main cleaner" id="view-cleaner" hidden>
+    <section class="card">
+      <h2>Clean pasted code</h2>
+      <p class="muted">
+        Fixes artifacts that the chat window's Markdown/LaTeX rendering leaves in copied code:
+        <code>arr\[0\]</code>, <code>\_\_init\_\_</code>, auto-linked URLs such as
+        <code>href="[a.css](http://a.css)"</code>, smart quotes, non-breaking and zero-width spaces.
+        Backslashes are removed only outside strings and comments. Suspicious escapes inside strings
+        and broken HTML tags are reported for you to check.
+      </p>
+      <div class="cleaner-options">
+        <label>Language
+          <select id="clean-lang">
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="java">Java</option>
+            <option value="kotlin">Kotlin</option>
+            <option value="rust">Rust</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="bash">Bash (typography + links only)</option>
+            <option value="html">HTML (+ inline scripts)</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="clean-quotes" checked> Fix smart quotes</label>
+        <label class="check"><input type="checkbox" id="clean-entities"> Decode HTML entities (&amp;lt; &amp;gt; &amp;amp;)</label>
+      </div>
+      <label>Code from Copilot
+        <textarea id="clean-input" class="code" rows="14" spellcheck="false" placeholder="Paste code here…"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" id="btn-clean" class="primary">Clean</button>
+        <span id="clean-status" role="status"></span>
+      </div>
+    </section>
+
+    <section class="card" id="clean-output-card" hidden>
+      <div class="output-head">
+        <h2>Cleaned code</h2>
+        <span id="clean-count" class="badge"></span>
+        <button type="button" id="btn-clean-copy" class="primary">Copy</button>
+      </div>
+      <textarea id="clean-output" class="code" rows="14" spellcheck="false"></textarea>
+      <ul id="clean-report" class="report"></ul>
+    </section>
+  </main>
 
   <script src="app.js"></script>
 </body>

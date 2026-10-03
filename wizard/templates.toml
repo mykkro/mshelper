@@ -34,19 +34,20 @@ WORKING STYLE
 
 OUTPUT
 6. Label every code block with its file path. For edits to existing code, use SEARCH/REPLACE blocks or complete files. Never write "... rest unchanged ..." inside code.
-7. After the code, give: (a) a 1-3 line summary, (b) the exact commands to verify it, (c) risks or follow-ups.
+7. Put ALL code (even one-liners) inside fenced code blocks with a language tag. Inside code, never add Markdown escapes (write [ ] _ * # as-is, not \[ \] \_ \* \#) and never use LaTeX or math formatting.
+8. After the code, give: (a) a 1-3 line summary, (b) the exact commands to verify it, (c) risks or follow-ups.
 
 QUALITY
-8. Production quality: error handling, edge cases, clear names, no dead code or debug prints.
-9. When fixing a bug, state the root cause in one sentence before the fix.
-10. When you add behavior, also give tests for it, unless I say not to.
+9. Production quality: error handling, edge cases, clear names, no dead code or debug prints.
+10. When fixing a bug, state the root cause in one sentence before the fix.
+11. When you add behavior, also give tests for it, unless I say not to.
 '''
 
 [blocks.primer_short]
 kind = "primer"
 label = "Short primer"
 text = '''
-Act as a senior engineer. Rules: ask if something is ambiguous; don't invent APIs; change only what is needed; label code blocks with file paths; for edits use SEARCH/REPLACE blocks or complete files (never "rest unchanged"); end with a short summary and the commands to verify.
+Act as a senior engineer. Rules: ask if something is ambiguous; don't invent APIs; change only what is needed; all code in fenced blocks labeled with file paths, with no Markdown escapes or LaTeX inside code; for edits use SEARCH/REPLACE blocks or complete files (never "rest unchanged"); end with a short summary and the commands to verify.
 '''
 
 # ---------------------------------------------------------------------------
@@ -67,15 +68,70 @@ PYTHON CONVENTIONS:
 
 [blocks.lang_javascript]
 kind = "language"
-label = "JavaScript / TypeScript"
+label = "JavaScript"
 text = '''
-JAVASCRIPT/TYPESCRIPT CONVENTIONS:
-- Prefer strict TypeScript; no `any` (use unknown + narrowing). ESM modules. const/let, ===, ?. and ??.
+JAVASCRIPT CONVENTIONS:
+- Modern JavaScript (ES2022), ESM modules. const/let (never var), ===, ?. and ??.
 - async/await, handle every rejection, no floating promises; Promise.all for independent work.
 - Throw Error objects (with `cause` when wrapping). Validate external data at the boundaries.
+- JSDoc type annotations on exported functions.
 - React: function components + hooks, no unnecessary useEffect, accessible markup.
-- Tests with vitest/jest (+ testing-library). Must pass eslint, prettier and tsc --noEmit.
+- Tests with vitest/jest (+ testing-library). Must pass eslint and prettier.
 - Prefer platform APIs over new dependencies.
+'''
+
+[blocks.lang_typescript]
+kind = "language"
+label = "TypeScript"
+text = '''
+TYPESCRIPT CONVENTIONS:
+- TypeScript 5.x with "strict": true. Must pass tsc --noEmit, typescript-eslint and prettier. ESM modules.
+- No `any` (use unknown + narrowing). No `!` non-null assertions or `as` casts unless you explain why they're safe; never `as unknown as T`.
+- Discriminated unions with exhaustive switch + never check; union literals / `as const` instead of enum; `satisfies` for checked literals; readonly where data shouldn't change.
+- Explicit return types on exported functions. `import type` for type-only imports.
+- Validate external data at the boundary with zod (or a type guard), and derive the types from the schema.
+- async/await, no floating promises. Errors: throw Error subclasses; narrow `unknown` in catch.
+- Tests with vitest/jest; type tests with expectTypeOf or @ts-expect-error.
+'''
+
+[blocks.lang_java]
+kind = "language"
+label = "Java"
+text = '''
+JAVA CONVENTIONS:
+- Java 17/21 (use only features of my version). Records for data, sealed interfaces + pattern matching, switch expressions, text blocks, var where the type is obvious.
+- Immutable by default (final fields, List.of, unmodifiable collections). Optional only as a return type; never return null for collections.
+- Specific exceptions with the cause attached; never swallow them; try-with-resources for every AutoCloseable.
+- java.time instead of Date/Calendar. Streams without side effects. java.util.concurrent for concurrency; document thread-safety.
+- SLF4J parameterized logging ("id={}"); no System.out.
+- Tests: JUnit 5 + AssertJ (+ Mockito only at external boundaries); @ParameterizedTest for tables of cases.
+- No new dependencies without asking.
+'''
+
+[blocks.lang_kotlin]
+kind = "language"
+label = "Kotlin"
+text = '''
+KOTLIN CONVENTIONS:
+- Idiomatic Kotlin 2.x, not Java written in Kotlin: val over var, data classes, sealed interfaces with exhaustive `when`, extension functions, named/default arguments.
+- Null safety: no `!!` (use ?., ?:, requireNotNull with a message). Decide platform types' nullability at the boundary.
+- Read-only collections in public APIs. require/check for preconditions; sealed result types for expected failures.
+- Coroutines: structured concurrency (no GlobalScope, no runBlocking in production code), Dispatchers.IO for blocking calls, Flow for streams, never swallow CancellationException.
+- Scope functions only where they make the code clearer. ktlint/detekt clean.
+- Tests: JUnit 5 or kotest + MockK; runTest for coroutines.
+'''
+
+[blocks.lang_bash]
+kind = "language"
+label = "Bash"
+text = '''
+BASH CONVENTIONS:
+- #!/usr/bin/env bash and set -euo pipefail (and know where -e does not apply). Tell me about portability problems for my target (Linux / macOS bash 3.2 / Git Bash).
+- Quote every expansion ("$var", "$@", "${arr[@]}"); [[ ]] for tests; $(...) not backticks; arrays for argument lists; no eval; never parse ls.
+- Must be shellcheck-clean. Functions + main "$@"; local variables; usage() with -h; errors to stderr; meaningful exit codes.
+- mktemp + trap cleanup on EXIT. Handle filenames with spaces/newlines (find -print0, read -d '').
+- Destructive operations need --dry-run and ${var:?} guards. Check that required commands exist.
+- Suggest Python if the script outgrows ~150 lines or needs real data structures.
 '''
 
 [blocks.lang_rust]
@@ -89,6 +145,34 @@ RUST CONVENTIONS:
 - Use enums and newtypes to make invalid states unrepresentable. No unsafe without a SAFETY comment and my approval.
 - tokio: never block in async code. Unit tests in #[cfg(test)] mod tests.
 - If unsure whether a crate API or feature flag exists in my version, say so.
+'''
+
+[blocks.lang_c]
+kind = "language"
+label = "C"
+text = '''
+C CONVENTIONS:
+- C11/C17. Must compile cleanly with -Wall -Wextra -Wpedantic (MSVC /W4).
+- No undefined behavior: signed overflow, out-of-bounds, uninitialized reads, strict aliasing, NULL deref, use-after-free, double free. Flag any implementation-defined behavior.
+- Every allocation has one clear owner and a matching free on every path, including error paths (single cleanup label). Check every malloc/calloc/realloc; never assign realloc back to the same pointer.
+- Bounds-safe strings: pass buffer sizes, use snprintf, never sprintf/strcpy/strcat/gets. size_t for sizes and indices.
+- Return error codes, with outputs through pointer parameters; check every library call's return value. const-correct pointers; static for file-local symbols.
+- Macros: parenthesize the arguments and the body; do { } while (0) for statement macros.
+- Suggest testing under -fsanitize=address,undefined or Valgrind.
+'''
+
+[blocks.lang_cpp]
+kind = "language"
+label = "C++"
+text = '''
+C++ CONVENTIONS:
+- C++17/20 (use only features of my standard version; say when something needs a newer one). Clean with -Wall -Wextra -Wpedantic (MSVC /W4) and clang-tidy. Follow the C++ Core Guidelines.
+- RAII; no raw new/delete; unique_ptr by default, shared_ptr only for real shared ownership; raw pointers/references are non-owning.
+- Rule of zero (or rule of five). const/constexpr wherever possible; [[nodiscard]]; noexcept on moves.
+- Pass cheap types by value, large read-only ones by const&, sinks by value + std::move. string_view/span only when the data outlives them.
+- Prefer standard containers and algorithms/ranges. One error style per module (exceptions or std::expected); state the exception-safety guarantee.
+- No UB: dangling references/iterators, iterator invalidation, use-after-move, signed overflow, data races.
+- No `using namespace` in headers. Suggest ASan/UBSan (TSan for threads) when debugging.
 '''
 
 # ---------------------------------------------------------------------------
@@ -318,7 +402,7 @@ category = "Build"
 title = "Write a function from a spec"
 description = "Specify a function precisely, with examples, and get code + tests."
 fields = [
-  { name = "language", label = "Language", type = "select", options = ["Python", "TypeScript", "JavaScript", "Rust"], required = true },
+  { name = "language", label = "Language", type = "select", options = ["Python", "TypeScript", "JavaScript", "Java", "Kotlin", "Rust", "C", "C++", "Bash"], required = true },
   { name = "signature", label = "Name / signature", type = "text", required = true, placeholder = "parse_duration(text: str) -> timedelta" },
   { name = "purpose", label = "Purpose", type = "text", required = true },
   { name = "inputs", label = "Inputs & constraints", type = "textarea" },
@@ -668,8 +752,8 @@ category = "Snippets"
 title = "Port code to another language"
 description = "Idiomatic translation, e.g. Python to Rust."
 fields = [
-  { name = "source", label = "From", type = "select", options = ["Python", "JavaScript", "TypeScript", "Rust"], required = true },
-  { name = "target", label = "To", type = "select", options = ["Rust", "Python", "TypeScript", "JavaScript"], required = true },
+  { name = "source", label = "From", type = "select", options = ["Python", "TypeScript", "JavaScript", "Java", "Kotlin", "Rust", "C", "C++", "Bash"], required = true },
+  { name = "target", label = "To", type = "select", options = ["Rust", "Python", "TypeScript", "JavaScript", "Java", "Kotlin", "C", "C++", "Bash"], required = true },
   { name = "deps", label = "Dependency mapping (optional)", type = "text", placeholder = "requests -> reqwest" },
   { name = "code", label = "Code", type = "code", required = true },
 ]
@@ -689,7 +773,7 @@ category = "Snippets"
 title = "Regex"
 description = "A regex with examples that should and shouldn't match."
 fields = [
-  { name = "flavor", label = "Flavor", type = "select", options = ["Python re", "JavaScript", "Rust regex crate", "PCRE"], required = true },
+  { name = "flavor", label = "Flavor", type = "select", options = ["Python re", "JavaScript", "Rust regex crate", "C++ std::regex (ECMAScript)", "Java / Kotlin (java.util.regex)", "grep -E / sed -E (POSIX ERE)", "PCRE"], required = true },
   { name = "what", label = "Should match...", type = "text", required = true },
   { name = "yes", label = "Positive examples", type = "textarea" },
   { name = "no", label = "Negative examples", type = "textarea" },
@@ -801,23 +885,6 @@ Explain where concurrency actually helps here and where it doesn't.
 # ===========================================================================
 
 [[tasks]]
-id = "ts_convert"
-category = "JS / TS"
-title = "Convert JS to TypeScript"
-description = "Strict TypeScript, with no `any`."
-fields = [
-  { name = "code", label = "JavaScript code", type = "code", lang = "javascript", required = true },
-]
-template = '''
-Convert this JavaScript file to strict TypeScript.
-- Infer precise types from usage. Create interfaces/types for the data shapes.
-- No `any`. Where the type is really unknown, use `unknown` and narrow it.
-- Mark places where the conversion exposed potential runtime bugs. Keep the runtime behavior identical.
-
-{{code}}
-'''
-
-[[tasks]]
 id = "react_component"
 category = "JS / TS"
 title = "React component"
@@ -906,6 +973,619 @@ fields = [
 ]
 template = '''
 Review this Rust code for idiom and clippy-level issues, and rewrite it: unnecessary clones/allocations, &String/&Vec parameters, manual loops that should be iterators, match -> if let / let-else, Option/Result combinators, missing derives, needless lifetimes. Keep the behavior identical. List the changes as bullets.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: C
+# ===========================================================================
+
+[[tasks]]
+id = "c_memory_bug"
+category = "C"
+title = "Memory bug / crash"
+description = "Segfaults, leaks, double frees: diagnose from ASan/Valgrind/gdb output."
+fields = [
+  { name = "symptom", label = "Symptom", type = "text", required = true, placeholder = "crashes with SIGSEGV / leaks memory" },
+  { name = "report", label = "ASan / Valgrind / gdb backtrace", type = "code" },
+  { name = "code", label = "Code (functions in the trace + alloc/free sites)", type = "code", lang = "c", required = true },
+]
+template = '''
+My C program {{symptom}}.
+
+Sanitizer / Valgrind / debugger output:
+{{report}}
+
+{{code}}
+
+1) Say which access is invalid and why, citing the allocation, free and access sites.
+2) Find the root cause: ownership, lifetime, size calculation, or off-by-one.
+3) Give the minimal fix, and check that the other paths (especially error paths) don't have the same bug.
+'''
+
+[[tasks]]
+id = "c_ub_review"
+category = "C"
+title = "Undefined behavior review"
+description = "Hunt for UB and portability problems."
+fields = [
+  { name = "code", label = "Code", type = "code", lang = "c", required = true },
+]
+template = '''
+Review this C code for undefined behavior and portability problems: signed overflow, bad shifts, out-of-bounds access, uninitialized reads, strict aliasing, misaligned access, sequence-point problems, NULL dereference, invalid pointer arithmetic, format-string mismatches, and integer promotion / sign-conversion surprises.
+For each one: the line, why it's UB (or implementation-defined), a concrete input that triggers it, and the fix.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "c_module"
+category = "C"
+title = "Design a module API"
+description = "An opaque-struct C module with clear ownership."
+fields = [
+  { name = "purpose", label = "Module purpose", type = "textarea", required = true },
+  { name = "threading", label = "Thread-safety", type = "select", options = ["not thread-safe", "thread-safe"], required = true },
+]
+template = '''
+Design a C module (header + implementation) for: {{purpose}}
+- An opaque struct with create/destroy functions; the caller owns the result.
+- Every function returns a status code; outputs go through pointer parameters.
+- Document ownership and lifetime for every pointer parameter and return value in the header.
+- Thread-safety: {{threading}}. State it in the header.
+Give the .h, the .c and a test file.
+'''
+
+# ===========================================================================
+# Tasks: C++
+# ===========================================================================
+
+[[tasks]]
+id = "cpp_modernize"
+category = "C++"
+title = "Modernize legacy C++"
+description = "Smart pointers, ranges, constexpr, without changing the behavior."
+fields = [
+  { name = "standard", label = "Target standard", type = "select", options = ["C++17", "C++20", "C++23"], required = true },
+  { name = "code", label = "Code", type = "code", lang = "cpp", required = true },
+]
+template = '''
+Modernize this C++ code to {{standard}} without changing the behavior:
+- Raw new/delete -> smart pointers or values; manual arrays -> std::vector/std::array.
+- Index loops -> range-for / algorithms / ranges where clearer.
+- NULL -> nullptr, typedef -> using, C casts -> named casts, macros -> constexpr/inline functions.
+- Add const, override, final, [[nodiscard]] and noexcept where they're correct.
+Do it in reviewable steps, listing each one before applying it. Point out any ownership that is unclear.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "cpp_lifetime"
+category = "C++"
+title = "Ownership & lifetime review"
+description = "Dangling references, iterator invalidation, use-after-move."
+fields = [
+  { name = "code", label = "Code", type = "code", lang = "cpp", required = true },
+]
+template = '''
+Review this C++ code for ownership and lifetime bugs: dangling references/pointers/string_views/spans, iterator invalidation, use-after-move, returning references to locals or temporaries, lambdas capturing by reference that outlive their scope, shared_ptr cycles, and missing virtual destructors.
+For each one: the line, the scenario that triggers it, and the fix. Then say who owns what in this code, as a short list.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "cpp_template_error"
+category = "C++"
+title = "Decode a template error"
+description = "Turn a wall of compiler output into the real cause."
+fields = [
+  { name = "error", label = "Compiler output (first error + note chain)", type = "code", required = true },
+  { name = "toolchain", label = "Compiler + standard", type = "text", placeholder = "gcc 13, C++20" },
+  { name = "code", label = "Code", type = "code", lang = "cpp", required = true },
+]
+template = '''
+This template error is unreadable:
+{{error}}
+Toolchain: {{toolchain}}
+
+{{code}}
+
+1) Say in plain words what the compiler tried to do and which requirement failed.
+2) Point to the line in MY code that causes it.
+3) Fix it. If concepts/static_assert would make the error clearer next time, show how.
+'''
+
+[[tasks]]
+id = "cmake_setup"
+category = "C++"
+title = "CMake project setup"
+description = "Modern, target-based CMake with tests and sanitizers."
+fields = [
+  { name = "targets", label = "Targets and sources", type = "textarea", required = true },
+  { name = "standard", label = "Standard", type = "select", options = ["C17", "C++17", "C++20", "C++23"], required = true },
+  { name = "deps", label = "Dependencies and how to get them", type = "text", placeholder = "fmt, GoogleTest via FetchContent" },
+]
+template = '''
+Create a modern CMake (>= 3.20) setup for this project:
+- Targets: {{targets}}
+- Standard: {{standard}}, set through target_compile_features.
+- Dependencies: {{deps}}
+- Warnings per target (MSVC /W4, others -Wall -Wextra -Wpedantic), with an option to turn them into errors.
+- Tests registered with CTest; a sanitizer option (ASan+UBSan) for non-MSVC builds.
+- No global include_directories / add_definitions; everything per target.
+Give the complete CMakeLists.txt files and the configure/build/test commands.
+'''
+
+# ===========================================================================
+# Tasks: TypeScript
+# ===========================================================================
+
+[[tasks]]
+id = "ts_convert"
+category = "TypeScript"
+title = "Convert JS to TypeScript"
+description = "Strict TypeScript, with no `any`."
+fields = [
+  { name = "code", label = "JavaScript code", type = "code", lang = "javascript", required = true },
+]
+template = '''
+Convert this JavaScript file to strict TypeScript.
+- Infer precise types from usage. Create interfaces/types for the data shapes.
+- No `any`. Where the type is really unknown, use `unknown` and narrow it.
+- Mark places where the conversion exposed potential runtime bugs. Keep the runtime behavior identical.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "ts_type_error"
+category = "TypeScript"
+title = "Fix a type error"
+description = "Understand 'X is not assignable to Y' and fix it without any/as/!."
+fields = [
+  { name = "error", label = "tsc output (with the full elaboration)", type = "code", required = true },
+  { name = "flags", label = "TS version + relevant tsconfig flags", type = "text", placeholder = "5.4, strict, noUncheckedIndexedAccess" },
+  { name = "code", label = "Code + relevant type definitions", type = "code", lang = "typescript", required = true },
+]
+template = '''
+`tsc` reports:
+{{error}}
+TypeScript / tsconfig: {{flags}}
+
+{{code}}
+
+1) Explain in plain words which types the compiler compared and where exactly they differ.
+2) Say whether the error found a real bug, or the types are just imprecise.
+3) Fix it properly. Don't use `any`, `as` or `!` to silence it unless you justify it.
+'''
+
+[[tasks]]
+id = "ts_schema"
+category = "TypeScript"
+title = "Runtime validation + derived types"
+description = "A zod schema for external data, with the TS type derived from it."
+fields = [
+  { name = "sample", label = "Sample payload(s)", type = "code", lang = "json", required = true },
+  { name = "rules", label = "Rules (required fields, formats, ranges)", type = "textarea" },
+  { name = "boundary", label = "Where the data comes in", type = "text", placeholder = "fetch response / request handler / env vars" },
+]
+template = '''
+Write a zod schema for this external data and derive the TypeScript type from it (z.infer):
+{{sample}}
+
+Rules:
+{{rules}}
+
+- Give a `parseX(input: unknown): X` function with readable error messages.
+- Show how to use it at the boundary: {{boundary}}
+- Tests for one valid sample and the most important invalid cases.
+'''
+
+[[tasks]]
+id = "ts_union"
+category = "TypeScript"
+title = "Model with a discriminated union"
+description = "Replace flag soup / optional fields with an exhaustive union."
+fields = [
+  { name = "concept", label = "What to model", type = "text", required = true, placeholder = "request state: idle / loading / success / error" },
+  { name = "code", label = "Current code", type = "code", lang = "typescript" },
+]
+template = '''
+Refactor this code to model {{concept}} as a discriminated union with `kind` as the discriminant.
+- One variant per case, carrying only the data that case needs.
+- Handle the variants with exhaustive `switch` statements, with an `assertNever(x: never)` default.
+- Point out the bugs or impossible states this removes.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: Java
+# ===========================================================================
+
+[[tasks]]
+id = "java_stacktrace"
+category = "Java"
+title = "Stack trace / NPE"
+description = "Follow the Caused-by chain to the real cause."
+fields = [
+  { name = "trace", label = "Full stack trace (including Caused by)", type = "code", required = true },
+  { name = "env", label = "Java version + framework", type = "text", placeholder = "Java 21, Spring Boot 3.3" },
+  { name = "code", label = "Code for the frames in YOUR packages", type = "code", lang = "java" },
+]
+template = '''
+Stack trace:
+{{trace}}
+Environment: {{env}}
+
+{{code}}
+
+Find the root cause. Read the "Caused by" chain to its deepest cause; the top frame is often not the bug. For an NPE, say which reference was null and why. Then give the fix, and how to prevent this class of bug (validation, Optional, annotations).
+'''
+
+[[tasks]]
+id = "java_modernize"
+category = "Java"
+title = "Modernize legacy Java"
+description = "Records, sealed types, pattern matching, java.time..."
+fields = [
+  { name = "version", label = "Target Java version", type = "select", options = ["17", "21"], required = true },
+  { name = "code", label = "Code", type = "code", lang = "java", required = true },
+]
+template = '''
+Modernize this Java code to Java {{version}} without changing the behavior:
+- Data-only POJOs -> records; type-code switches -> sealed interfaces + pattern matching.
+- Old switch statements -> switch expressions; instanceof + cast -> pattern matching.
+- Anonymous classes -> lambdas/method references; loops -> streams only where clearer.
+- Raw types -> generics; Date/Calendar -> java.time; manual closing -> try-with-resources.
+Do it in reviewable steps. Point out any change that could affect serialization, reflection or frameworks (JPA, Jackson, Spring proxies).
+
+{{code}}
+'''
+
+[[tasks]]
+id = "java_spring_endpoint"
+category = "Java"
+title = "Spring Boot endpoint"
+description = "Controller + service + DTO records + validation + tests."
+fields = [
+  { name = "endpoint", label = "Method and path", type = "text", required = true, placeholder = "POST /api/orders" },
+  { name = "behavior", label = "Behavior", type = "textarea", required = true },
+  { name = "code", label = "Existing code for style", type = "code", lang = "java" },
+]
+template = '''
+Add a REST endpoint {{endpoint}} to this Spring Boot 3 app.
+Behavior:
+{{behavior}}
+
+- Request/response DTOs as records, with Bean Validation; 400 with field errors through @ControllerAdvice (ProblemDetail).
+- Thin controller, logic in a @Service, transactions only where needed.
+- Tests: @WebMvcTest (MockMvc) for the controller, and a unit test for the service.
+
+Existing code for style:
+{{code}}
+'''
+
+[[tasks]]
+id = "java_jpa"
+category = "Java"
+title = "JPA / Hibernate problem"
+description = "N+1, LazyInitializationException, slow or wrong queries."
+fields = [
+  { name = "problem", label = "Problem", type = "text", required = true, placeholder = "N+1 queries when listing orders" },
+  { name = "entities", label = "Entities", type = "code", lang = "java", required = true },
+  { name = "code", label = "Repository/query + calling code", type = "code", lang = "java" },
+  { name = "sql", label = "SQL log", type = "code", lang = "sql" },
+]
+template = '''
+JPA problem: {{problem}}
+
+Entities:
+{{entities}}
+
+Repository/query and calling code:
+{{code}}
+
+SQL log:
+{{sql}}
+
+Explain what Hibernate is doing and why, then fix it (fetch join, @EntityGraph, DTO projection, batch size, transaction boundaries...). State the trade-offs.
+'''
+
+# ===========================================================================
+# Tasks: Kotlin
+# ===========================================================================
+
+[[tasks]]
+id = "kt_from_java"
+category = "Kotlin"
+title = "Java to idiomatic Kotlin"
+description = "Not a line-by-line transliteration."
+fields = [
+  { name = "interop", label = "Must stay callable from Java?", type = "select", options = ["no", "yes"], required = true },
+  { name = "code", label = "Java code", type = "code", lang = "java", required = true },
+]
+template = '''
+Convert this Java code to idiomatic Kotlin. Don't transliterate it line by line.
+- POJOs -> data classes; static helpers -> top-level/extension functions; builders -> named/default arguments.
+- Decide the nullability of every type explicitly; no `!!`.
+- Streams -> Kotlin collection operations; switch/if chains -> `when`.
+- Must stay callable from Java: {{interop}} (if yes: @JvmStatic, @JvmOverloads, @JvmName where needed).
+List any behavior differences (e.g. nullability now enforced, data class equality).
+
+{{code}}
+'''
+
+[[tasks]]
+id = "kt_coroutines"
+category = "Kotlin"
+title = "Coroutines review"
+description = "Scopes, dispatchers, cancellation, Flow."
+fields = [
+  { name = "code", label = "Code", type = "code", lang = "kotlin", required = true },
+]
+template = '''
+Review this coroutine code for: GlobalScope or unstructured launches, blocking calls on the wrong dispatcher, swallowed CancellationException (catch (e: Exception) around suspend calls), leaking scopes/jobs, runBlocking in production code, shared mutable state without Mutex/atomic, and Flow collection on the wrong context or lifecycle. For each one: what can go wrong, and the fix.
+
+{{code}}
+'''
+
+[[tasks]]
+id = "kt_sealed_state"
+category = "Kotlin"
+title = "Sealed hierarchy for state"
+description = "Model UI/domain state or results with exhaustive when."
+fields = [
+  { name = "what", label = "What to model", type = "textarea", required = true },
+  { name = "code", label = "Current code (optional)", type = "code", lang = "kotlin" },
+]
+template = '''
+Model this as a sealed interface: {{what}}
+- One subtype per state, carrying only its data (data class / data object).
+- Exhaustive `when` at the use sites, with no else branch.
+- Show how the code that produces and consumes it changes.
+
+{{code}}
+'''
+
+# ===========================================================================
+# Tasks: Bash
+# ===========================================================================
+
+[[tasks]]
+id = "bash_script"
+category = "Bash"
+title = "Write a robust script"
+description = "set -euo pipefail, argument parsing, dry-run, shellcheck-clean."
+fields = [
+  { name = "task", label = "What the script does", type = "textarea", required = true },
+  { name = "options", label = "Options / arguments", type = "textarea", placeholder = "-n/--dry-run, -v/--verbose, positional input dir" },
+  { name = "target", label = "Target", type = "select", options = ["Linux", "Git Bash on Windows", "macOS (bash 3.2)", "POSIX sh"], required = true },
+  { name = "tools", label = "Tools it may use", type = "text", placeholder = "grep, sed, awk, jq" },
+]
+template = '''
+Write a bash script that {{task}}
+Target: {{target}}
+Tools it may use: {{tools}} (check that they exist at startup)
+
+Options/arguments:
+{{options}}
+
+- Parse arguments with a `while case` loop; usage() with -h; exit codes 0 ok / 1 runtime error / 2 usage error.
+- Must be shellcheck-clean. Short comments only on the non-obvious parts.
+Show 3 example invocations, including a dry run.
+'''
+
+[[tasks]]
+id = "bash_review"
+category = "Bash"
+title = "Review / harden a script"
+description = "Quoting, set -e pitfalls, unsafe rm, portability."
+fields = [
+  { name = "target", label = "Target", type = "select", options = ["Linux", "Git Bash on Windows", "macOS (bash 3.2)", "POSIX sh"], required = true },
+  { name = "script", label = "Script", type = "code", lang = "bash", required = true },
+]
+template = '''
+Review this bash script as a strict reviewer. Target: {{target}}.
+- Quoting bugs and word-splitting/globbing, unsafe rm/mv with possibly empty variables, parsing ls, `for f in $(...)` loops, missing set -euo pipefail (and where -e won't save you), cd without error handling, temp files without cleanup, race conditions, unvalidated input.
+- Portability problems for the target, and what shellcheck would flag (SC codes).
+List the issues by severity, then give the hardened script.
+
+{{script}}
+'''
+
+[[tasks]]
+id = "bash_debug"
+category = "Bash"
+title = "Debug a failing script"
+description = "Use the bash -x trace to find the cause."
+fields = [
+  { name = "trace", label = "Output (ideally from bash -x)", type = "code", required = true },
+  { name = "env", label = "Environment / how it's run", type = "text", placeholder = "Ubuntu 22.04, bash 5.1, run from cron" },
+  { name = "script", label = "Script", type = "code", lang = "bash", required = true },
+]
+template = '''
+This script fails:
+{{trace}}
+Environment: {{env}}
+
+{{script}}
+
+Find the root cause. Common suspects: a different PATH/env under cron or sudo, CRLF line endings ($'\r': command not found), unquoted variables, set -e side effects, a subshell losing variables (pipe into while).
+'''
+
+[[tasks]]
+id = "bash_text"
+category = "Bash"
+title = "Text processing (awk/sed/jq)"
+description = "Transform text or JSON with standard tools."
+fields = [
+  { name = "sample", label = "Input sample", type = "code", required = true },
+  { name = "goal", label = "Goal", type = "textarea", required = true },
+  { name = "tool", label = "Preferred tool", type = "select", options = ["awk", "sed", "jq", "plain bash", "any"] },
+]
+template = '''
+Input sample:
+{{sample}}
+
+Goal: {{goal}}
+Preferred tool: {{tool}}
+Explain each part. Note any GNU vs BSD/macOS differences (sed -i, date, grep -P) that matter.
+'''
+
+# ===========================================================================
+# Tasks: Gotchas (recovering from bad answers; see toolkit/05-gotchas.md)
+# ===========================================================================
+
+[[tasks]]
+id = "g_resend_clean"
+category = "Gotchas"
+title = "Resend code without escapes / mangled tags"
+description = "The code came back with \\[ \\_ escapes, auto-linked URLs or broken HTML tags."
+fields = [
+  { name = "files", label = "Which file(s)", type = "text", placeholder = "index.html, app.py" },
+  { name = "example", label = "Example of the damage (optional)", type = "code" },
+]
+template = '''
+The code in your last answer was damaged by formatting: Markdown escapes such as \[ \] \_ \*, URLs turned into links inside attributes/strings, or mangled HTML tags.
+Files affected: {{files}}
+
+Example:
+{{example}}
+
+Resend the complete affected file(s) inside a single fenced code block per file, with the correct language tag. Inside code: no Markdown escapes, no LaTeX, no links. Write URLs and file names as plain text exactly as they belong in the code.
+'''
+
+[[tasks]]
+id = "g_continue"
+category = "Gotchas"
+title = "Answer was cut off"
+description = "Continue a truncated answer without repeating it."
+fields = [
+  { name = "last_line", label = "Last complete line you received (optional)", type = "text" },
+]
+template = '''
+Your answer was cut off. Continue exactly where you stopped. Don't repeat earlier content.
+The last complete line I received was: {{last_line}}
+Start a new code block, and say which file and position it continues.
+'''
+
+[[tasks]]
+id = "g_no_placeholders"
+category = "Gotchas"
+title = "Remove '... rest unchanged' placeholders"
+description = "Get the complete file when the answer omitted parts."
+fields = [
+  { name = "file", label = "File", type = "text", required = true },
+]
+template = '''
+Your answer for {{file}} contains placeholders/omissions (like "... rest unchanged ..."). If I save it, real code will be deleted.
+Give the COMPLETE file, every line, with no placeholders or ellipses. If it is too long for one answer, split it into numbered parts at function boundaries and tell me how many parts there are.
+'''
+
+[[tasks]]
+id = "g_verify_api"
+category = "Gotchas"
+title = "Is this API real?"
+description = "Challenge a possibly invented function, flag, config key or version."
+fields = [
+  { name = "thing", label = "The API / flag / option in doubt", type = "text", required = true, placeholder = "pandas DataFrame.to_markdown(index=False)" },
+  { name = "version", label = "Library + version I use", type = "text" },
+  { name = "error", label = "Error I got (optional)", type = "code" },
+]
+template = '''
+I'm not sure this exists: {{thing}}
+My version: {{version}}
+
+Error:
+{{error}}
+
+1) Say honestly how confident you are that it exists in my version, and where it is documented.
+2) Give me a quick way to verify it myself (a REPL command, a doc page, a source file to check).
+3) If it doesn't exist or you're unsure, give an alternative that uses only APIs you are sure about.
+'''
+
+[[tasks]]
+id = "g_resync"
+category = "Gotchas"
+title = "Resync with my current code"
+description = "Copilot is editing an outdated version of your file."
+fields = [
+  { name = "note", label = "What changed since (optional)", type = "textarea" },
+  { name = "code", label = "Current file content (or bundle files below)", type = "code" },
+]
+template = '''
+The code you're working from is outdated. Below is the CURRENT version. Discard all earlier versions from this conversation, and base every future SEARCH block and edit on this text only.
+
+What changed since your last answer:
+{{note}}
+
+{{code}}
+
+Confirm by listing the functions/sections you now see, then redo your last change against this version.
+'''
+
+[[tasks]]
+id = "g_search_mismatch"
+category = "Gotchas"
+title = "SEARCH block doesn't match"
+description = "Regenerate an edit against the exact current text."
+fields = [
+  { name = "file", label = "File", type = "text", required = true },
+  { name = "region", label = "Exact current text of that region", type = "code", required = true },
+]
+template = '''
+Your SEARCH block for {{file}} doesn't match my file. Here is the exact current text of that region (whitespace matters):
+{{region}}
+
+Regenerate the SEARCH/REPLACE block against this text. Copy the SEARCH part character for character from it.
+'''
+
+[[tasks]]
+id = "g_revert_unrelated"
+category = "Gotchas"
+title = "Undo unrelated changes"
+description = "Copilot renamed, reformatted or 'improved' things you didn't ask for."
+fields = [
+  { name = "examples", label = "Unrequested changes you noticed", type = "textarea" },
+]
+template = '''
+Your last answer changed things I didn't ask for, for example:
+{{examples}}
+
+Revert every change that isn't strictly needed for the task: no renames, reformatting, reordered imports, or added/removed comments. Give only the minimal edits for the task.
+'''
+
+[[tasks]]
+id = "g_tests_weakened"
+category = "Gotchas"
+title = "Don't weaken the tests"
+description = "Copilot changed the tests to pass instead of fixing the code."
+fields = [
+  { name = "failing", label = "Failing test output", type = "code" },
+]
+template = '''
+Don't modify the tests. They describe the required behavior. Fix the implementation so they pass.
+
+Failing output:
+{{failing}}
+
+Explain why the implementation fails the test, then give the fix to the implementation only.
+'''
+
+[[tasks]]
+id = "g_ascii_output"
+category = "Gotchas"
+title = "Remove emoji / non-ASCII output"
+description = "Windows console UnicodeEncodeError from emoji or arrows in prints and logs."
+fields = [
+  { name = "code", label = "Code (optional)", type = "code" },
+]
+template = '''
+Your code prints emoji/non-ASCII symbols (like ✓ → •), which crash on my Windows console with UnicodeEncodeError. Replace them with plain ASCII in all print/log/output strings, and use ASCII only from now on in this conversation.
 
 {{code}}
 '''

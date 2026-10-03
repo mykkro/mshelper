@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import cleaner
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,13 +31,16 @@ MAX_TREE_ENTRIES = 400
 EXCLUDED_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "target", ".venv", "venv", "env", "__pycache__",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build", ".next", ".idea", ".vscode",
-    "coverage", ".tox",
+    "coverage", ".tox", "out", "cmake-build-debug", "cmake-build-release",
 }
 EXT_LANG = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
     ".ts": "typescript", ".tsx": "tsx", ".jsx": "jsx", ".rs": "rust", ".toml": "toml",
     ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".md": "markdown", ".html": "html",
     ".css": "css", ".sql": "sql", ".sh": "bash", ".ps1": "powershell", ".txt": "text",
+    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp",
+    ".cmake": "cmake", ".java": "java", ".kt": "kotlin", ".kts": "kotlin", ".gradle": "groovy",
+    ".xml": "xml", ".properties": "properties", ".bash": "bash",
 }
 PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 CONTENT_TYPES = {
@@ -267,6 +272,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/render":
                 prompt = render_prompt(data, load_templates())
                 self._json({"prompt": prompt, "chars": len(prompt)})
+            elif path == "/api/clean":
+                try:
+                    result = cleaner.clean(
+                        str(data.get("code", "")),
+                        str(data.get("lang", "python")),
+                        fix=bool(data.get("fix", True)),
+                        smart_quotes=bool(data.get("smart_quotes", True)),
+                        html_entities=bool(data.get("html_entities", False)),
+                    )
+                except ValueError as err:
+                    raise WizardError(str(err)) from err
+                self._json(result.to_dict())
             elif path == "/api/tree":
                 root = resolve_root(str(data.get("root", "")))
                 self._json({"root": str(root), "tree": project_tree(root),
